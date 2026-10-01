@@ -1,0 +1,383 @@
+$ink: #f7f8f8;
+$muted: #bac0c3;
+$line: rgba(235, 239, 241, .17);
+$brand: #ffbc48;
+$amber: #ffbc48;
+$background: #182024;
+
+@mixin glass { background: rgba(40, 47, 51, .74); border: 1px solid $line; backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 92px; scroll-padding-bottom: calc(104px + env(safe-area-inset-bottom)); color-scheme: dark; }
+body { margin: 0; color: $ink; background: $background; font: 15px/1.55 "Trebuchet MS", "Lucida Sans Unicode", sans-serif; letter-spacing: 0; }
+button, input, select { font: inherit; }
+button, a, input, select, summary { -webkit-tap-highlight-color: transparent; }
+button { min-height: 44px; padding: 10px 14px; border: 1px solid $line; border-radius: 8px; color: $ink; background: rgba(255, 255, 255, .06); font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: background .16s; }
+button:hover:not(:disabled) { background: rgba(255, 202, 112, .14); }
+button:disabled { cursor: not-allowed; opacity: .48; }
+button svg { flex-shrink: 0; }
+a { color: inherit; text-underline-offset: 4px; }
+:is(button, a, input, select, summary, .bar, .threshold-marker):focus-visible { outline: 2px solid $amber; outline-offset: 4px; }
+input:not([type=checkbox]):not([type=range]), select { width: 100%; min-height: 48px; min-width: 0; padding: 10px 12px; border: 1px solid $line; border-radius: 8px; color: $ink; background: rgba(13, 18, 20, .45); }
+select { cursor: pointer; }
+option { background: #252c30; color: $ink; }
+input[type=checkbox] { width: 22px; height: 22px; accent-color: $brand; }
+input[type=range] { width: 100%; min-height: 44px; accent-color: $brand; }
+label { display: block; color: $muted; font-size: 12px; }
+label input, label select { margin-top: 6px; font-size: 15px; }
+h1, h2, h3, p { margin-top: 0; }
+h1, h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; line-height: 1.2; }
+h1 { font-size: 30px; margin-bottom: 8px; }
+h2 { font-size: 26px; margin-bottom: 16px; }
+h3 { font-size: 17px; margin-bottom: 14px; }
+p { margin-bottom: 14px; }
+img { max-width: 100%; object-fit: contain; }
+section, .watch-item, button, summary, a, input, select { scroll-margin-bottom: calc(104px + env(safe-area-inset-bottom)); }
+.app-shell { max-width: 1220px; margin: auto; padding: 0 20px calc(104px + env(safe-area-inset-bottom)); }
+.masthead { @include glass; position: sticky; z-index: 20; top: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 64px; padding: calc(8px + env(safe-area-inset-top)) 16px 8px; margin: 0 -20px; border-width: 0 0 1px; background-color: rgba(24, 32, 36, .94); }
+.brand { display: flex; align-items: center; gap: 9px; text-decoration: none; font-size: 17px; min-width: 0; }
+.brand strong { font-weight: 600; }
+.install-control { margin-left: auto; max-width: 100%; }
+.install-control > p { max-width: 320px; font-size: 12px; overflow-wrap: anywhere; margin: 8px 0 0; }
+.install-invitation { display: flex; align-items: center; gap: 8px; font-size: 12px; max-width: 240px; }
+.install-control button { font-size: 12px; }
+.app-navigation { @include glass; position: fixed; z-index: 25; left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); bottom: calc(12px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; max-width: 780px; margin-inline: auto; border-radius: 28px; box-shadow: 0 8px 32px #0006; }
+.app-navigation a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 48px; text-decoration: none; font-size: 12px; font-weight: 600; color: $muted; border-radius: 28px; }
+.app-navigation a[aria-current] { color: #ffca70; background: rgba(255, 188, 72, .17); }
+.app-navigation a:hover { color: #ffca70; background: rgba(255, 188, 72, .1); }
+.navigation-fade { position: fixed; z-index: 24; inset: auto 0 0; height: calc(104px + env(safe-area-inset-bottom)); background: linear-gradient(to bottom, rgba($background, 0), $background 75%); pointer-events: none; }
+.skip-link { position: fixed; top: -100px; z-index: 50; padding: 12px; background: #252c30; }
+.skip-link:focus { top: 8px; }
+.eyebrow { display: block; font-size: 10px; font-weight: 700; color: $brand; margin-bottom: 8px; }
+.notice { @include glass; margin: 16px 0; padding: 14px 16px; border-left: 3px solid $brand; font-size: 13px; overflow-wrap: anywhere; }
+.notice.warning, .notice.demo { background-color: rgba(112, 87, 44, .25); border-left-color: $amber; }
+.notice button { margin-top: 10px; }
+.notice p:last-child { margin-bottom: 0; }
+.demo strong { color: $amber; margin-right: 10px; }
+.outlook { padding: 24px 0 28px; }
+.outlook-intro { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-bottom: 22px; }
+.outlook-intro > div { min-width: 0; }
+.outlook-intro p { margin: 0; color: $muted; font-size: 13px; }
+.outlook-intro img { flex-shrink: 0; width: 64px; }
+.forecast-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 16px 0; border-block: 1px solid $line; }
+.segmented { display: flex; padding: 3px; width: fit-content; flex-shrink: 0; border: 1px solid $line; border-radius: 8px; background: rgba(13, 18, 20, .3); }
+.segmented button { min-width: 80px; min-height: 44px; border: 0; padding: 8px 14px; border-radius: 5px; font-size: 13px; color: $muted; }
+.segmented button[aria-pressed=true] { background: rgba(255, 188, 72, .17); color: $brand; box-shadow: inset 0 0 0 1px rgba(255, 188, 72, .2); }
+.target-select { order: 3; flex-basis: 100%; min-width: 0; }
+.status { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: 11px; max-width: 135px; color: $amber; }
+.status i { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: $amber; }
+.status.ready { color: $brand; }
+.status.ready i { background: $brand; }
+.target-times { display: flex; flex-wrap: wrap; gap: 5px 18px; color: $muted; font-size: 11px; padding-top: 16px; }
+.target-times strong { width: 100%; color: $ink; font-size: 13px; }
+.target-times span, time { overflow-wrap: anywhere; }
+.snapshot-strip { color: $muted; font-size: 11px; margin: 10px 0 0; }
+.forecast-grid { display: grid; gap: 24px; margin-top: 24px; }
+.distribution { min-width: 0; }
+.chart-heading { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; }
+.legend { display: flex; align-items: center; gap: 6px; color: $muted; font-weight: 400; font-size: 10px; }
+.legend i { width: 8px; height: 8px; border-radius: 2px; background: $amber; }
+.histogram svg { display: block; width: 100%; min-width: 620px; margin-top: 12px; touch-action: manipulation; }
+.plot-scroll { overflow-x: auto; padding: 4px; scrollbar-color: #8c9599 transparent; }
+.grid-line { stroke: rgba(235, 239, 241, .18); stroke-dasharray: 3 5; }
+.axis { fill: $muted; font-family: "Trebuchet MS", sans-serif; font-size: 13px; }
+.hit-area { fill: transparent; }
+.column { fill: #8c9599; }
+.bar { cursor: pointer; }
+.bar.included .column { fill: $amber; }
+.bar.active .column, .bar:focus-visible .column { stroke: $ink; stroke-width: 2; }
+.bin-detail { min-height: 36px; margin: 8px 0 16px; color: $muted; font-size: 12px; text-align: center; }
+.summary-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-block: 18px; border-block: 1px solid $line; }
+.summary-row > div { min-width: 0; }
+.summary-row span, .summary-row small { display: block; color: $muted; font-size: 11px; }
+.summary-row strong { display: block; font-size: 18px; font-weight: 500; line-height: 1.4; margin: 7px 0; }
+.threshold-panel { @include glass; border-radius: 8px; padding: 20px; align-self: start; }
+.threshold-panel h2 { font-size: 23px; }
+.threshold-panel .segmented { width: 100%; margin: 16px 0; }
+.threshold-panel .segmented button { flex: 1; min-width: 0; }
+.probability { display: flex; align-items: center; gap: 16px; margin: 8px 0 16px; }
+.probability strong { font: 400 40px/1.2 Georgia, serif; color: $amber; }
+.probability span { font-size: 12px; color: $muted; }
+.small { color: $muted; font-size: 12px; line-height: 1.65; }
+.watch-link { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding-top: 10px; border-top: 1px solid $line; color: $brand; font-size: 13px; text-decoration: none; }
+.watch-link span { font-size: 24px; }
+.method { margin-top: 22px; border-block: 1px solid $line; padding: 8px 0; }
+.method .sheet-trigger { width: 100%; justify-content: flex-start; border: 0; background: none; text-align: left; font-size: 12px; }
+.method .sheet-trigger span { margin-left: auto; color: $muted; white-space: nowrap; }
+.method-grid { display: grid; gap: 18px; color: $muted; font-size: 13px; }
+.method-grid h3 { color: $ink; }
+.source-details { color: $muted; font-size: 13px; }
+.source-details, .method-grid, .validation-summary { overflow-wrap: anywhere; }
+.validation-summary { margin-top: 22px; font-size: 13px; }
+.validation-summary h3, .validation-summary strong { color: $ink; }
+.validation-summary > ul { padding: 0; margin: 0; list-style: none; }
+.validation-summary > ul > li { padding: 14px 0; border-top: 1px solid $line; }
+.validation-summary p { margin: 6px 0; color: $muted; }
+summary { min-height: 44px; cursor: pointer; padding: 12px 0; color: $brand; }
+.validation-examples { padding-left: 20px; color: $muted; }
+.validation-examples li + li { margin-top: 8px; }
+.forecast-empty { padding: 36px 16px; text-align: center; border-bottom: 1px solid $line; }
+.forecast-empty > svg { color: $amber; margin-bottom: 16px; }
+.forecast-empty h2 { font-size: 24px; }
+.forecast-empty p { max-width: 450px; margin: 0 auto 14px; color: $muted; font-size: 13px; }
+.validation-count { color: $amber; font-size: 12px; }
+.loading-icon { animation: turn 2s linear infinite; }
+@keyframes turn { to { transform: rotate(360deg); } }
+.watch-section, .history-section { padding: 28px 0; border-top: 1px solid $line; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.section-heading h2 { margin: 0; font-size: 24px; }
+.count { color: $muted; font-size: 12px; white-space: nowrap; }
+.watch-columns { display: grid; gap: 24px; }
+.watch-form { padding-top: 18px; border-top: 1px solid $line; }
+.watch-target { font-size: 19px; }
+.watch-target span { display: block; margin-top: 5px; color: $muted; font-size: 12px; }
+.field-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.check { display: flex; gap: 8px; align-items: center; min-height: 44px; color: $ink; }
+.check input { margin: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.actions button { font-size: 12px; }
+.primary { background: #ffbc48; color: #182024; border-color: #ffbc48; }
+.primary:hover:not(:disabled) { background: #ffca70; }
+.push-settings { padding-top: 20px; margin-top: 24px; border-top: 1px solid $line; }
+.push-settings > p { font-size: 12px; color: $muted; }
+.watch-item { @include glass; border-radius: 8px; padding: 18px; margin-bottom: 12px; }
+.watch-item .section-heading { flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+.watch-item .section-heading a { font: 20px Georgia, serif; }
+.watch-item p { font-size: 12px; margin-bottom: 8px; }
+.watch-item:target, .watch-item.linked-watch { border-color: $amber; background-color: rgba(112, 87, 44, .25); }
+.empty { text-align: center; padding: 32px 16px; border-top: 1px solid $line; color: $muted; }
+.empty img { margin-bottom: 12px; }
+.empty p { font-size: 12px; }
+.history-note { color: $muted; font-size: 12px; }
+.performance-table { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 620px; text-align: left; font-size: 12px; }
+caption { text-align: left; color: $muted; padding-bottom: 12px; }
+th, td { padding: 14px 12px; border-bottom: 1px solid $line; }
+thead th { background: rgba(255, 255, 255, .06); color: $muted; font-size: 11px; }
+tbody th { font-weight: 500; text-transform: capitalize; }
+footer { display: flex; flex-wrap: wrap; gap: 12px; padding: 22px 0; border-top: 1px solid $line; color: $muted; font-size: 11px; }
+footer > span { color: $ink; font-weight: 700; }
+footer p { width: 100%; order: 3; margin: 0; }
+footer a { margin-left: auto; min-height: 44px; display: flex; align-items: center; }
+.update { width: 100%; order: 3; margin: 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.update button { margin: 0; }
+.masthead > p { width: 100%; margin: 0; font-size: 12px; }
+.sheet { @include glass; position: fixed; margin: auto auto 0; max-width: 640px; width: 100%; max-height: min(86dvh, 900px); padding: 0; border-radius: 8px 8px 0 0; color: $ink; background-color: rgba(24, 32, 36, .97); box-shadow: 0 -12px 64px rgba(0, 0, 0, .3); }
+.sheet::backdrop { background: rgba(8, 10, 12, .65); backdrop-filter: blur(5px); }
+.sheet-content { padding: 20px 22px calc(24px + env(safe-area-inset-bottom)); }
+.sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 22px; }
+.sheet-heading h2 { margin: 0; font-size: 24px; }
+.icon-button { width: 44px; height: 44px; padding: 0; flex-shrink: 0; }
+body:has(dialog[open]) { overflow: hidden; }
+@media (min-width: 800px) {
+  .app-shell { padding-inline: 36px; }
+  .masthead { margin: 0 -36px; padding-inline: 36px; }
+  .app-navigation { top: auto; }
+  html { scroll-padding-top: 148px; }
+  .outlook { padding-top: 24px; }
+  .outlook-intro { padding-bottom: 26px; }
+  .target-select { order: 0; flex: 1; max-width: 430px; }
+  .status { max-width: 180px; }
+  .forecast-grid { grid-template-columns: minmax(0, 1fr) 290px; gap: 28px; }
+  .histogram svg { min-width: 0; }
+  .watch-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px; }
+  .sheet { margin: auto; border-radius: 8px; }
+  footer { padding-bottom: 22px; }
+}
+@media (max-width: 370px) {
+  .app-shell { padding-inline: 14px; }
+  .masthead { margin-inline: -14px; padding-inline: 14px; }
+  .brand { font-size: 15px; gap: 6px; }
+  .brand img { width: 30px; height: 30px; }
+  .install-control button { padding-inline: 10px; }
+  .summary-row { grid-template-columns: 1fr; }
+  .method .sheet-trigger { flex-wrap: wrap; }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .masthead, .app-navigation, .sheet, .threshold-panel, .watch-item, .notice { background: #252c30; }
+  .notice.warning, .notice.demo { background: #403d2e; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .masthead, .app-navigation, .sheet, .threshold-panel, .watch-item, .notice { background: #252c30; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  button { transition: none; }
+  .loading-icon { animation: none; }
+}
+
+// Compact forecast surface; provenance stays in the details sheet.
+.outlook { padding-top: 14px; }
+.forecast-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 0 0 14px; border-top: 0; }
+.forecast-toolbar .segmented button { min-width: 64px; padding-inline: 10px; }
+.target-select { display: flex; align-items: center; gap: 6px; order: 0; color: $brand; }
+.target-select svg { flex-shrink: 0; }
+.target-select select { margin: 0; padding-inline: 8px; min-height: 50px; font-size: 12px; }
+.outlook-meta { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 10px; }
+.outlook-meta .eyebrow { margin: 0; }
+.outlook-meta .status { max-width: none; }
+.forecast-for { margin: 0; font-size: 13px; color: $muted; }
+.forecast-for time { color: $ink; }
+.outlook-meta { gap: 10px; align-items: baseline; }
+.outlook-intro { padding: 0; gap: 10px; }
+.favored-label { color: $muted; font-size: 12px; }
+.outlook-intro h1 { font: 600 28px/1.3 "Trebuchet MS", sans-serif; margin: 4px 0; }
+.outlook-intro h1 span { color: $muted; }
+.outlook-intro img { width: 58px; height: 58px; }
+.outlook-intro p { font-size: 11px; }
+.forecast-grid { gap: 4px; margin-top: 8px; }
+.chart-heading { align-items: center; flex-wrap: wrap; font-size: 12px; color: $muted; }
+.chart-coverage { font-size: 10px; font-weight: 400; }
+.chart-heading > span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-heading i { width: 8px; height: 8px; border-radius: 2px; }
+.price-direction { display: flex; justify-content: space-between; color: $muted; font-size: 11px; padding-inline: 8.3% 5.6%; margin-top: -4px; }
+.histogram svg { min-width: 0; margin-top: 0; }
+.plot-scroll { overflow: hidden; padding: 0; }
+.axis { font-size: 19px; fill: #bac0c3; }
+.column, .bar.included .column { fill: #8c9599; }
+.bar.central .column { fill: #c7cbcd; }
+.bar.modal .column { fill: $amber; }
+.bar:not(.included):not(.modal) .column { fill-opacity: .5; }
+.uncertainty-band { fill: rgba(255, 255, 255, .05); }
+.selection-band { fill: rgba(255, 188, 72, .06); }
+.threshold-marker { cursor: ew-resize; touch-action: none; }
+.marker-hit { fill: transparent; }
+.threshold-marker line { stroke: $ink; stroke-width: 2; stroke-dasharray: 5 4; }
+.threshold-marker circle { fill: $ink; stroke: #182024; stroke-width: 2; }
+.threshold-marker path { stroke: #182024; stroke-width: 2; fill: none; pointer-events: none; }
+.threshold-marker:focus-visible circle { fill: $amber; }
+.chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 0 8px; color: $muted; font-size: 10px; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.chart-legend span:last-child { margin-left: auto; }
+.chart-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.peak-key { background: $amber; }
+.central-key { background: #c7cbcd; }
+.freshness { display: flex; align-items: center; gap: 5px; color: $muted; font-size: 10px; margin-top: 4px; }
+.freshness svg { margin-top: 2px; }
+.freshness time { display: inline; }
+.bin-detail { min-height: 20px; margin: 0; font-size: 10px; }
+.range-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; padding: 8px 0; border-block: 1px solid $line; }
+.range-strip span { color: $muted; font-size: 11px; }
+.range-strip strong { font-size: 13px; font-weight: 600; }
+.threshold-panel { padding: 4px 0 0; border: 0; border-radius: 0; background: none; backdrop-filter: none; }
+.odds-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; }
+.threshold-panel .segmented { width: auto; margin: 0; }
+.threshold-panel .segmented button { min-width: 0; padding-inline: 9px; font-size: 12px; white-space: nowrap; }
+.odds-controls select { min-height: 50px; padding: 8px; font-size: 13px; }
+.probability { margin: 0 0 8px; gap: 10px; }
+.probability strong { font: 600 32px/1.2 "Trebuchet MS", sans-serif; }
+.probability > div { min-width: 0; flex: 1; }
+.probability .chance-label { display: block; font-size: 13px; color: $ink; }
+.probability small { display: block; color: $muted; font-size: 10px; }
+.probability a { margin-left: auto; width: 44px; height: 44px; display: grid; place-items: center; color: $brand; }
+.method { margin-top: 8px; padding: 0; border-bottom: 0; }
+.method .sheet-trigger { width: auto; padding-inline: 0; color: $muted; }
+.forecast-empty { min-height: 230px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px 0; border: 0; gap: 6px; }
+.forecast-empty > svg { color: $muted; margin-bottom: 8px; }
+.forecast-empty img { width: 144px; height: 144px; margin: 0 0 10px; filter: saturate(.8); }
+.forecast-empty h1 { font: 600 24px/1.3 "Trebuchet MS", sans-serif; margin-bottom: 7px; }
+.forecast-empty p { font-size: 13px; margin-bottom: 18px; }
+.forecast-empty[aria-busy=true] img { animation: weather-breathe 2s ease-in-out infinite; }
+@keyframes weather-breathe { 50% { opacity: .55; transform: translateY(-4px); } }
+.source-details > p { padding-bottom: 12px; border-bottom: 1px solid $line; color: $ink; }
+.source-links { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 12px 0; font-size: 13px; }
+.source-links a { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: $brand; }
+.validation-summary { margin-top: 10px; }
+.validation-summary h3 { font-size: 15px; color: $amber; margin-bottom: 0; }
+.validation-summary ul { padding-left: 18px; }
+.validation-summary li { padding: 8px 0; }
+.source-details details p { font-size: 12px; }
+.watch-section, .history-section { padding-block: 22px; }
+.section-heading h2 { font: 600 21px/1.3 "Trebuchet MS", sans-serif; }
+.watch-form h3, .push-settings h3 { font-size: 16px; }
+.watch-target { font-size: 17px; }
+.watch-form { padding-top: 0; border-top: 0; }
+.watch-target span { font-size: 11px; }
+.watch-section .eyebrow { display: none; }
+.watch-section summary, .history-section summary { font-size: 12px; }
+.watch-columns .empty { padding: 22px 0; }
+.history-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.history-stats > div { display: flex; flex-direction: column; border-left: 2px solid $brand; padding-left: 14px; }
+.history-stats > div:nth-child(2) { border-color: $amber; }
+.history-stats h3 { text-transform: capitalize; font-size: 14px; margin-bottom: 8px; }
+.history-stats strong { font-size: 28px; }
+.history-stats span, .history-stats small { color: $muted; font-size: 12px; }
+.notice { padding: 10px 12px; font-size: 12px; }
+.notice.demo { margin-block: 10px; }
+.notice button { margin: 0 0 0 8px; }
+@media (min-width: 800px) {
+  .forecast-toolbar { grid-template-columns: auto minmax(0, 290px); justify-content: space-between; }
+  .forecast-grid { grid-template-columns: minmax(0, 1fr) 290px; gap: 28px; }
+  .outlook-intro h1 { font-size: 40px; }
+  .outlook-intro img { width: 76px; height: 76px; }
+  .threshold-panel { border-left: 1px solid $line; padding-left: 22px; }
+  .odds-controls { grid-template-columns: 1fr; }
+  .probability { flex-wrap: wrap; margin: 0 0 16px; }
+  .probability > div { flex-basis: 100%; }
+  .probability strong { font-size: 40px; }
+  .histogram svg { max-height: 290px; }
+  .forecast-empty { min-height: 260px; }
+  .forecast-empty img { width: 170px; height: 170px; }
+}
+@media (max-width: 370px) {
+  .forecast-toolbar { gap: 6px; }
+  .forecast-toolbar .segmented button { min-width: 60px; padding-inline: 8px; }
+  .target-select { gap: 4px; }
+  .target-select select { padding-inline: 5px; font-size: 11px; }
+  .outlook-intro h1 { font-size: 26px; }
+  .outlook-intro { flex-wrap: wrap; }
+  .freshness { text-align: left; }
+  .freshness time { display: inline; margin-left: 5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .forecast-empty[aria-busy=true] img { animation: none; }
+}
+
+.projection { padding: 12px 0 20px; border-bottom: 1px solid $line; margin-bottom: 18px; min-width: 0; }
+.projection .section-heading { margin-bottom: 8px; }
+.projection h2, .distribution-title { font: 600 17px/1.3 "Trebuchet MS", sans-serif; margin: 0; }
+.projection-scroll { overflow-x: auto; max-width: 100%; scrollbar-color: #8c9599 transparent; }
+.projection-scroll svg { display: block; max-width: none; height: 330px; }
+.projection-axis { fill: $muted; font-size: 11px; }
+.projection rect[role=button] { cursor: pointer; }
+.projection rect[role=button]:focus-visible { stroke: white; stroke-width: 2; outline: none; }
+.projection-caveat { margin: 10px 0; max-width: 780px; }
+.projection-detail { display: flex; flex-wrap: wrap; gap: 3px 16px; min-height: 100px; font-size: 12px; color: $muted; }
+.projection-detail strong { color: $ink; font-size: 15px; }
+.projection-detail time, .projection-detail > span:last-child { flex-basis: 100%; }
+.projection summary { font-size: 12px; }
+.projection-empty { margin: 16px 0; color: $muted; font-size: 13px; }
+.projection-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-block: 12px; }
+.projection-controls label { display: flex; align-items: center; gap: 8px; }
+.projection-controls select { width: auto; margin: 0; font-size: 12px; }
+.projection-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; font-size: 11px; color: $muted; }
+.projection-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.projection-legend i { width: 12px; height: 8px; }
+.band-90 { fill: rgba(255, 188, 72, .14); background: rgba(255, 188, 72, .14); }
+.band-80 { fill: rgba(255, 188, 72, .24); background: rgba(255, 188, 72, .24); }
+.band-50 { fill: rgba(255, 188, 72, .40); background: rgba(255, 188, 72, .40); }
+.daily-tiles { display: grid; grid-auto-flow: column; grid-auto-columns: 180px; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 8px 2px; margin-block: 12px; }
+.day-tile { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 7px; min-width: 0; min-height: 184px; padding: 12px; scroll-snap-align: start; font-size: 12px; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.day-tile[aria-pressed=true] { border-color: $brand; background: rgba(255, 188, 72, .10); }
+.day-tile:disabled { opacity: 1; color: $muted; }
+.day-tile svg { color: $brand; }
+.day-tile .tile-outlook { display: flex; align-items: center; gap: 9px; min-height: 32px; }
+.day-tile .tile-outlook span { color: $brand; font-weight: 600; }
+.day-tile.outlook-sunny .tile-outlook :is(svg, span) { color: #6cdb9a; }
+.day-tile:is(.outlook-rainy, .outlook-snowy) .tile-outlook :is(svg, span) { color: #f47e87; }
+.day-tile.outlook-unavailable .tile-outlook :is(svg, span) { color: $muted; }
+.day-tile strong { font-size: 15px; line-height: 1.4; }
+.projection-reference { margin: 0 0 8px; }
+.day-tile time { font-weight: 600; }
+.day-tile span, .day-tile small { color: $muted; font-weight: 400; }
+.day-tile small { display: block; font-size: 11px; }
+.projection-detail { min-height: 0; padding-block: 8px; }
+@media (min-width: 800px) {
+  .daily-tiles { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: visible; }
+  .day-tile { min-height: 176px; }
+}
+.distribution-title { margin-bottom: 8px; color: $muted; }
+.forecast-grid.watch-selection { display: block; max-width: 540px; }
+.watch-selection .threshold-panel { padding: 0; border: 0; }
+.watch-selection .odds-controls { grid-template-columns: auto minmax(0, 1fr); }
+.watch-selection .probability { flex-wrap: nowrap; }
+.watch-selection .probability > div { flex-basis: auto; }

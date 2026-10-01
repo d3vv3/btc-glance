@@ -1,0 +1,22 @@
+[Unit]
+Description=Bitcoin Weather web
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=@APP_DIR@
+EnvironmentFile=@ENV_FILE@
+Environment="PATH=@NODE_PATH@"
+Environment=NODE_ENV=production
+Environment="DATA_DIR=@DATA_DIR@"
+ExecStart=@NODE_EXECUTABLE@ @APP_DIR@/node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port @PORT@
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

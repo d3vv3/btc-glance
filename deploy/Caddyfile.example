@@ -1,0 +1,8 @@
+# Replace this hostname and set APP_ORIGIN=https://weather.example.com.
+# TLS termination requires an already provisioned server/domain and Caddy.
+weather.example.com {
+    request_body {
+        max_size 1MB
+    }
+    reverse_proxy 127.0.0.1:3104
+}
