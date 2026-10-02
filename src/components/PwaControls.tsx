@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, RefreshCw, X } from "lucide-react";
 import { Sheet } from "./Sheet";
-import { androidBrowserInstructions, detectInstallBrowser, installActionLabel, installInstructions, isInstalledDisplay, type InstallBrowser } from "../lib/pwa-install";
+import { detectInstallBrowser, installInstructions, isInstalledDisplay, type InstallBrowser } from "../lib/pwa-install";
 
 interface InstallEvent extends Event { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> }
 const dismissalKey = "bw-install-invitation-dismissed";
@@ -110,8 +110,8 @@ export function PwaControls() {
   };
   return <>
     {waiting && <div className="notice update"><span>An app update is ready.</span><button onClick={() => { waiting.postMessage({ type: "SKIP_WAITING" }); }}><RefreshCw size={16} />Update & reload</button></div>}
-    {browser && !installed && <div className="install-control">{install && !dismissed && !waiting && <div className="install-invitation"><span>Add BTC glance to your apps</span><button className="icon-button" title="Dismiss install invitation" aria-label="Dismiss install invitation" disabled={inFlight} onClick={dismissInvitation}><X size={16} /></button></div>}{install ? <button disabled={inFlight} onClick={requestInstall}><Download size={18} />{inFlight ? "Installing..." : "Install"}</button> : <Sheet title="Install BTC glance" trigger={<><Download size={18} /><span>{installActionLabel(browser)}</span></>}>
-      {browser.platform === "android" ? <ol><li>{androidBrowserInstructions(browser)}</li><li>{installInstructions(browser)}</li></ol> : <p>{installInstructions(browser)}</p>}
+    {browser && !installed && <div className="install-control">{install && !dismissed && !waiting && <div className="install-invitation"><span>Add BTC glance to your apps</span><button className="icon-button" title="Dismiss install invitation" aria-label="Dismiss install invitation" disabled={inFlight} onClick={dismissInvitation}><X size={16} /></button></div>}{install ? <button disabled={inFlight} onClick={requestInstall}><Download size={18} />{inFlight ? "Installing..." : "Install"}</button> : <Sheet title="Install BTC glance" trigger={<><Download size={18} /><span>Install</span></>}>
+      <p>{installInstructions(browser)}</p>
     </Sheet>}{error && <p role="status">{error}</p>}{status && <p role="status">{status}</p>}</div>}
   </>;
 }

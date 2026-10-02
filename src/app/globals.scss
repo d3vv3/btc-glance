@@ -362,7 +362,7 @@ body:has(dialog[open]) { overflow: hidden; }
 .forecast-column:first-of-type { border-radius: 8px 0 0 8px; }
 .forecast-column:last-of-type { border-radius: 0 8px 8px 0; }
 .forecast-column + .forecast-column { border-left: 0; }
-.forecast-column[aria-pressed=true] { border-color: transparent; }
+.forecast-column[aria-pressed=true] { border-color: transparent; border-radius: 8px; }
 .forecast-column[aria-pressed=true]::after { content: ""; position: absolute; inset: 0; border: 2px solid $brand; border-radius: inherit; pointer-events: none; }
 .forecast-column:hover:not(:disabled) { background: transparent; box-shadow: inset 0 0 0 1px $muted; }
 .forecast-column[aria-pressed=true]:hover { box-shadow: none; }

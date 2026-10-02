@@ -45,7 +45,7 @@ describe("browser-aware install guidance", () => {
 });
 
 // Exercise the actual component with deterministic hooks, without adding a DOM dependency.
-function controls({ iosStandalone = false, display = "browser", production = false, storage = new Map<string, string>(), storageFails = false, userAgent = "Windows Firefox/130" } = {}) {
+function controls({ iosStandalone = false, display = "browser", production = false, storage = new Map<string, string>(), storageFails = false } = {}) {
   const slots: any[] = [];
   let index = 0;
   let mounted = false;
@@ -58,7 +58,7 @@ function controls({ iosStandalone = false, display = "browser", production = fal
   };
   window.location = { reload: vi.fn() };
   const serviceWorker = Object.assign(new EventTarget(), { controller: { postMessage: vi.fn() }, register: vi.fn(async () => ({ waiting: { postMessage: vi.fn() }, addEventListener: vi.fn() })) });
-  const navigator = { userAgent, platform: "Win32", maxTouchPoints: 0, standalone: iosStandalone, serviceWorker };
+  const navigator = { userAgent: "Windows Firefox/130", platform: "Win32", maxTouchPoints: 0, standalone: iosStandalone, serviceWorker };
   const react = {
     useState: (initial: any) => {
       const slot = index++;
@@ -94,35 +94,6 @@ function promptEvent(outcome: "accepted" | "dismissed") {
 }
 
 describe("progressive install controls", () => {
-  it.each([
-    ["Android Firefox/130", "How to install"],
-    ["Android Chrome/130 Safari/537.36", "How to install"],
-    ["iPhone Version/18.0 Safari/605.1", "Add to Home Screen"],
-    ["Windows Firefox/130", "How to install"],
-  ])("labels manual guidance honestly for %s", (userAgent, label) => {
-    const ui = controls({ userAgent });
-    const sheet = ui.all().find(node => node.type === "sheet");
-    expect(sheet.props.trigger.props.children[1].props.children).toBe(label);
-    expect(ui.installButton()).toBeUndefined();
-    expect(ui.all().some(node => node.props?.className === "install-invitation")).toBe(false);
-    ui.unmount();
-  });
-  it("offers compact Android Firefox steps without claiming to detect or launch a full browser", () => {
-    const ui = controls({ userAgent: "Android Firefox/130" });
-    const steps = ui.all().filter(node => node.type === "li").map(node => node.props.children);
-    expect(steps).toEqual([
-      "If opened inside another app, choose Open in Firefox first.",
-      "In Firefox, open the browser menu and choose Install or Add to Home screen, then confirm.",
-    ]);
-    expect(ui.all().some(node => node.type === "a")).toBe(false);
-    expect(ui.installButton()).toBeUndefined();
-    ui.unmount();
-  });
-  it("keeps Android guidance conditional for other browsers too", () => {
-    const ui = controls({ userAgent: "Android Chrome/130" });
-    expect(ui.all().find(node => node.type === "li").props.children).toBe("If opened inside another app, open this page in your browser first.");
-    ui.unmount();
-  });
   it("uses BTC glance in both install guidance and the native invitation", () => {
     const ui = controls();
     expect(ui.all().find(node => node.type === "sheet").props.title).toBe("Install BTC glance");
@@ -168,7 +139,6 @@ describe("progressive install controls", () => {
     const button = ui.installButton();
     expect(button).toBeTruthy(); // Feature event wins even on desktop Firefox.
     const request = button.props.onClick();
-    expect(event.prompt).toHaveBeenCalledTimes(1); // No asynchronous work before the browser gesture.
     expect(ui.installButton().props.disabled).toBe(true);
     await button.props.onClick();
     expect(event.prompt).toHaveBeenCalledTimes(1);

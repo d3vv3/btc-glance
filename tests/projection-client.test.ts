@@ -236,7 +236,8 @@ describe("projection client regressions", () => {
     expect(styles).toMatch(/\.forecast-range-plot \{[^}]*top: var\(--forecast-header-height\)[^}]*height: var\(--forecast-plot-height\)/);
     expect(styles).toMatch(/\.forecast-column \{[^}]*background: transparent/);
     expect(styles).toMatch(/\.forecast-column \{[^}]*position: relative[^}]*height: calc\(var\(--forecast-header-height\) \+ var\(--forecast-plot-height\)\)/);
-    expect(styles).toContain('.forecast-column[aria-pressed=true] { border-color: transparent; }');
+    expect(styles).toContain('.forecast-column[aria-pressed=true] { border-color: transparent; border-radius: 8px; }');
+    expect(styles).not.toMatch(/\.forecast-column\[aria-pressed=true\] \{[^}]*(?:overflow:\s*hidden|clip-path:)/);
     expect(styles).toContain('.forecast-column[aria-pressed=true]::after { content: ""; position: absolute; inset: 0; border: 2px solid $brand; border-radius: inherit; pointer-events: none; }');
     expect((styles.match(/\.forecast-column\[aria-pressed=true\]::after \{[^}]*content:/g) ?? [])).toHaveLength(1);
     expect(styles).not.toMatch(/\.forecast-column\[aria-pressed=true\]::before/);

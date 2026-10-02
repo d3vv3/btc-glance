@@ -33,16 +33,6 @@ export function installInstructions({ platform, browser }: InstallBrowser): stri
   return "Check your browser menu for a web app installation option. If none is offered, open this page in Chrome, Edge, or another supported browser.";
 }
 
-export function installActionLabel({ platform }: InstallBrowser): string {
-  return platform === "ios" ? "Add to Home Screen" : "How to install";
-}
-
-export function androidBrowserInstructions({ browser }: InstallBrowser): string {
-  return browser === "firefox"
-    ? "If opened inside another app, choose Open in Firefox first."
-    : "If opened inside another app, open this page in your browser first.";
-}
-
 export function isInstalledDisplay(standalone: boolean | undefined, standaloneMode: boolean, minimalUiMode: boolean): boolean {
   return standalone === true || standaloneMode || minimalUiMode;
 }
