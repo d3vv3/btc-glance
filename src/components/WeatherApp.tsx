@@ -210,7 +210,7 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
       <section className="outlook" id="outlook">
         <Projection cadence={cadence} now={now} offline={offline} topic={topic} onSelect={select} onHistorical={selectHistorical}
           cadenceControls={<div className="segmented" aria-label="Market cadence">{(["hourly", "daily"] as const).map(c => <button key={c} aria-pressed={cadence === c} onClick={() => changeCadence(c)}>{c === "hourly" ? "Hourly" : "Daily"}</button>)}</div>}
-          forecastLabel={<div className="outlook-meta"><p className="forecast-for">{targetAt ? <>Forecast for <time dateTime={targetAt} aria-label={localTime(targetAt)} title={localTime(targetAt)}>{compactTime(targetAt)}</time></> : "Bitcoin price forecast"}</p><span className={`status ${status === "Live" ? "ready" : ""}`} role="status" aria-label={offline ? "Offline" : marketCachedAt ? "Cached" : status}><i aria-hidden="true" /><span className="sr-only">{offline ? "Offline" : marketCachedAt ? "Cached" : status}</span></span></div>}
+          forecastLabel={live => <div className="outlook-meta"><p className="forecast-for">{targetAt ? <>Forecast for <time dateTime={targetAt} aria-label={localTime(targetAt)} title={localTime(targetAt)}>{compactTime(targetAt)}</time></> : "Bitcoin price forecast"}</p><span className={`status ${live ? "ready" : ""}`} role="status" aria-label={live ? "Live" : "Not live"}><i aria-hidden="true" /><span className="sr-only">{live ? "Live" : "Not live"}</span></span></div>}
         />
         {(error || forecastError) && forecast && <button className="icon-button" title="Retry" aria-label="Retry" onClick={retryForecast}><RefreshCw size={16} /></button>}
         {forecast ? <>

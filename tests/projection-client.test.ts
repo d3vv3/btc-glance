@@ -47,7 +47,7 @@ describe("projection client regressions", () => {
   it("keeps sentiment and icons stable when modal and median guides disagree", () => {
     const targets = [target(1), target(2)];
     targets.forEach((r, j) => {
-      const bins = Array.from({ length: 5 }, (_, i) => ({ ...r.forecast!.buckets[0], lower: 84000 + i * 200, upper: 84200 + i * 200, probability: (j ? [.4, 0, 0, .35, .25] : [0, .25, .4, .35, 0])[i] }));
+      const bins = Array.from({ length: 5 }, (_, i) => ({ ...r.forecast!.buckets[0], optionId: i + 1, lower: 84000 + i * 200, upper: 84200 + i * 200, probability: (j ? [.4, 0, 0, .35, .25] : [0, .25, .4, .35, 0])[i] }));
       r.forecast = { ...r.forecast!, buckets: bins, summary: summarize(bins) };
     });
     const html = ["range", "heatmap"].map(view => render([observation(84300), ...targets], 3, view));
@@ -215,7 +215,7 @@ describe("projection client regressions", () => {
     expect(html).toContain('aria-label="Bullish, Wide range"');
     expect(html).toContain('stroke="var(--positive)" stroke-width="3"');
   });
-  it.each(["range", "heatmap"].flatMap(view => (["stale", "invalid", "unavailable", "expired"] as const).map(status => ({ view, status }))))("hides the dummy price domain for $status $view forecasts and retains capture evidence", ({ view, status }) => {
+  it.each(["range", "heatmap"].flatMap(view => (["invalid", "unavailable", "expired"] as const).map(status => ({ view, status }))))("hides the dummy price domain for $status $view forecasts and retains capture evidence", ({ view, status }) => {
     const stale = target(1); stale.status = status;
     const html = render([stale], 3, view);
     expect(html).toContain("Unavailable");
@@ -324,7 +324,7 @@ describe("projection client regressions", () => {
     expect(html).toContain('aria-label="Forecast, dashed line"><i class="forecast-line-key" aria-hidden="true"></i>Forecast');
     expect(html).not.toMatch(/Actual \(solid\)|Forecast \(dashed\)/);
     expect(html).toContain("Reference");
-    const stale = target(1); stale.status = "stale";
+    const stale = target(1); stale.status = "invalid";
     const gaps = render([stale, targets[1]], 3);
     expect(gaps).toContain('aria-label="Sentiment unavailable"');
     expect(gaps).toContain("lucide-cloud-off");
@@ -371,7 +371,7 @@ describe("projection client regressions", () => {
   });
   it("preserves unavailable gap shading and separates connected bands from singleton intervals", () => {
     const stale = target(3);
-    stale.freshUntil = new Date(now - 1).toISOString();
+    stale.status = "invalid";
     const html = render([target(1), target(2), stale, target(4)], 7);
     expect((html.match(/<polygon\b/g) ?? []).length).toBe(3);
     expect((html.match(/<rect\b[^>]*class="fan-band /g) ?? []).length).toBe(3);
@@ -379,7 +379,7 @@ describe("projection client regressions", () => {
     expect((html.match(/data-testid="missing-date"/g) ?? []).length).toBe(3);
     expect((html.match(/fill="var\(--stale\)" fill-opacity=".16"/g) ?? []).length).toBe(4);
     expect((html.match(/<button\b[^>]*class="forecast-column [^>]*aria-label=/g) ?? []).length).toBe(7);
-    expect(html).toMatch(/aria-label="[^"]*Stale or expired, Sentiment unavailable"/);
+    expect(html).toMatch(/aria-label="[^"]*invalid, Sentiment unavailable"/);
   });
   it("shares the selected histogram central80 with the projection and tile range", () => {
     const result = target(2);
@@ -493,7 +493,7 @@ describe("projection client regressions", () => {
     expect(html).toContain("$86k-$86.2k");
     expect(html).toContain("Reference $84k-$84.2k");
     expect(html).toContain("100.0% quote share");
-    targets[1].status = "stale";
+    targets[1].status = "invalid";
     const fallback = render(targets, 3, "heatmap", "daily", 2);
     expect(fallback).not.toContain("Selected target unavailable; first valid target");
     expect(fallback).toContain("$84k-$84.2k");

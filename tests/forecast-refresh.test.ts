@@ -30,7 +30,7 @@ const bins = convertQuotes(quote(), 3).buckets;
 const forecast: ForecastResult = { market, status: "ready", diagnostics: [], freshUntil: new Date(now + 300000).toISOString(), forecast: { snapshotId: 1, topicId: market.topicId, targetAt: market.targetAt, capturedAt: new Date(now).toISOString(), source: "live", buckets: bins, summary: summarize(bins), transformationVersion: "quote-share-v1", originalYesSum: 100, normalizationFactor: 1, normalized: false, interpretation: "quote-share-not-calibrated", caveat: "" } };
 const timeline = (target: ForecastResult): TimelineResult => ({ cadence: "hourly", asOf: new Date(now).toISOString(), collectedAt: new Date(now).toISOString(), source: "live", targets: [target] });
 const deferred = <T,>() => { let resolve!: (value: T) => void; let reject!: (error: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
-const nodes = (tree: any): ReactElement<any>[] => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children), ...nodes(tree.props?.cadenceControls), ...nodes(tree.props?.forecastLabel)];
+const nodes = (tree: any): ReactElement<any>[] => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children), ...nodes(tree.props?.cadenceControls), ...nodes(typeof tree.props?.forecastLabel === "function" ? tree.props.forecastLabel(false) : tree.props?.forecastLabel)];
 
 describe("forecast refresh and boundary safety", () => {
   let browser: EventTarget;
@@ -83,6 +83,28 @@ describe("forecast refresh and boundary safety", () => {
     expect(reads.public.mock.calls[1][2]).toEqual({ force: true });
     expect(nodes(render(component)).some(node => node.props.className === "projection-price-axis")).toBe(true);
   });
+  it.each(["range", "heatmap"])("retains %s after a failed refresh, recovers Live, then replaces invalid data", async view => {
+    const retained = timeline(forecast);
+    reads.public.mockResolvedValueOnce({ data: retained, cachedAt: null });
+    const label = vi.fn(() => null);
+    const component = () => Projection({ cadence: "hourly", now: Date.now(), offline: false, topic: null, onSelect: () => {}, forecastLabel: label });
+    render(component); hooks.states[6] = view; effect(1); await settle();
+    render(component); expect(label).toHaveBeenLastCalledWith(true);
+    reads.public.mockRejectedValueOnce(new Error("Refresh failed"));
+    browser.dispatchEvent(new Event("online")); await settle();
+    const elements = nodes(render(component));
+    expect(hooks.states[0]).toBe(retained);
+    expect(elements.some(n => n.props.className === "projection-price-axis")).toBe(true);
+    expect(elements.some(n => String(n.props["aria-label"]).includes("Cached forecast"))).toBe(true);
+    expect(label).toHaveBeenLastCalledWith(false);
+    reads.public.mockResolvedValueOnce({ data: retained, cachedAt: null });
+    browser.dispatchEvent(new Event("online")); await settle(); render(component);
+    expect(label).toHaveBeenLastCalledWith(true);
+    reads.public.mockResolvedValueOnce({ data: timeline({ ...forecast, status: "invalid", forecast: null }), cachedAt: null });
+    browser.dispatchEvent(new Event("online")); await settle();
+    expect(nodes(render(component)).some(n => n.props.className === "projection-price-axis")).toBe(false);
+    expect(label).toHaveBeenLastCalledWith(false);
+  });
 
   const mountWeather = async () => {
     render(() => WeatherApp()); effect(0); await settle();
@@ -96,10 +118,10 @@ describe("forecast refresh and boundary safety", () => {
     vi.stubGlobal("fetch", fetcher);
     reads.public.mockImplementation(actual.publicRead);
     try {
-      expect(nodes(await mountWeather()).some(node => node.props["aria-label"] === "Live")).toBe(true);
+      expect(nodes(await mountWeather()).some(node => node.props["aria-label"] === "Not live")).toBe(true);
       cleanups.splice(0).forEach(fn => fn()); hooks.states = []; hooks.refs = [];
       vi.setSystemTime(now + 31000);
-      expect(nodes(await mountWeather()).some(node => node.props["aria-label"] === "Stale")).toBe(true);
+      expect(nodes(await mountWeather()).some(node => node.props["aria-label"] === "Not live")).toBe(true);
       expect(fetcher).toHaveBeenCalledTimes(2);
       cleanups.splice(0).forEach(fn => fn()); hooks.states = []; hooks.refs = [];
       vi.setSystemTime(now + 60000); await mountWeather();
@@ -110,7 +132,7 @@ describe("forecast refresh and boundary safety", () => {
     vi.stubGlobal("location", { href: "https://weather.example.com/?snapshotId=1", search: "?snapshotId=1" });
     const elements = nodes(await mountWeather());
     expect(reads.public).toHaveBeenCalledWith("/api/forecasts/snapshot?snapshotId=1");
-    expect(elements.some(node => node.props["aria-label"] === "Historical")).toBe(true);
+    expect(elements.some(node => node.props["aria-label"] === "Not live")).toBe(true);
     expect(elements.some(node => node.type === "time" && node.props.dateTime === forecast.forecast!.targetAt)).toBe(true);
     expect(elements.some(node => node.props.className === "historical-notice" || node.props.className === "latest-outlook")).toBe(false);
      expect(JSON.stringify(elements)).not.toMatch(/Return to latest outlook|Latest outlook/i);
@@ -151,9 +173,10 @@ describe("forecast refresh and boundary safety", () => {
     expect(hooks.states[12]).toBe(false);
     expect(reads.freshness).not.toHaveBeenCalled();
     const status = nodes(tree).find(node => typeof node.props.className === "string" && node.props.className.startsWith("status "));
-    expect(status?.props["aria-label"]).toBe(cached ? "Offline" : "Live");
-    expect(nodes(status).some(node => node.props.className === "sr-only" && node.props.children === (cached ? "Offline" : "Live"))).toBe(true);
-    if (cached) expect(JSON.stringify(tree)).toContain("Offline");
+    expect(status?.props["aria-label"]).toBe("Not live");
+    expect(nodes(status).some(node => node.props.className === "sr-only" && node.props.children === "Not live")).toBe(true);
+    const projection = nodes(tree).find(node => node.type === Projection)!;
+    expect(nodes(projection.props.forecastLabel(true)).some(node => node.props.className === "status ready" && node.props["aria-label"] === "Live")).toBe(true);
   });
   it("retains an unsupported URL boundary without prose, numeric chance or handoff", async () => {
     vi.stubGlobal("location", { href: `https://weather.example.com/?market=${market.topicId}&boundary=1500`, search: `?market=${market.topicId}&boundary=1500` });

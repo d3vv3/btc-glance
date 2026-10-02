@@ -3,7 +3,7 @@ import { centralInterval } from "./forecast";
 
 export interface CentralBand { nominal: number; lower: number; upper: number; probability: number }
 export interface DistributionRanges { median: Bucket; midpoint: number; bands: CentralBand[] }
-export interface ProjectionColumn { result: TimelineTarget; kind: "past" | "future"; observed: number | null; targetAt: string; topicId: number; available: boolean; reason: string; midpoint: number | null; ranges: DistributionRanges | null; masses: number[]; heatmapAvailable: boolean; omittedMass: number | null; outlook: MarketOutlook; direction: ProjectionDirection; sentiment: SentimentResult }
+export interface ProjectionColumn { result: TimelineTarget; kind: "past" | "future"; observed: number | null; targetAt: string; topicId: number; available: boolean; live: boolean; reason: string; midpoint: number | null; ranges: DistributionRanges | null; masses: number[]; heatmapAvailable: boolean; omittedMass: number | null; outlook: MarketOutlook; direction: ProjectionDirection; sentiment: SentimentResult }
 export interface ProjectionModel { rows: { lower: number; upper: number }[]; columns: ProjectionColumn[]; segments: number[][]; bandSegments: number[][]; lower: number; upper: number; reference: { targetAt: string; ranges: DistributionRanges } | null; focus: { topicId: number; targetAt: string; central90: CentralBand; fallback: boolean } | null; peakMass: number; unequalFinalRow: boolean }
 
 export const OUTLOOK_WIDE_RANGE_RATIO = .08;
@@ -102,7 +102,7 @@ export function modalMidpoint(bucket: Bucket): number { return bucket.lower + (b
 
 // Inverse discrete CDF: boundaries stay in the original bins, never interpolated.
 export function distributionRanges(buckets: Bucket[]): DistributionRanges | null {
-  if (!buckets.length) return null;
+  if (!Array.isArray(buckets) || !buckets.length || buckets.some(b => !b || typeof b !== "object")) return null;
   const bins = [...buckets].sort((a, b) => a.lower - b.lower);
   if (bins.some((b, i) => !Number.isFinite(b.lower) || b.lower < 0 || !Number.isFinite(b.upper) || b.upper <= b.lower || !Number.isFinite(b.probability) || b.probability < 0 || b.probability > 1 || (i > 0 && Math.abs(b.lower - bins[i - 1].upper) > 1e-8))) return null;
   if (Math.abs(bins.reduce((sum, b) => sum + b.probability, 0) - 1) > 1e-8) return null;
@@ -174,8 +174,18 @@ function eligibleArchive(r: TimelineTarget, cadence: TimelineResult["cadence"]):
 }
 
 export function projectionModel(data: TimelineResult, now: number | null, cached = false, mode: "range" | "heatmap" = "heatmap", selectedTopicId: number | null = null): ProjectionModel {
-   const observedReference = sentimentReference(data, now);
-   const eligible = (r: TimelineTarget) => now !== null && r.status === "ready" && !!r.forecast && !!r.market && (r.kind === "past" ? eligibleArchive(r, data.cadence) && Date.parse(r.market.targetAt) <= Math.min(now, Date.parse(data.asOf)) : !cached && !!r.freshUntil && Date.parse(r.freshUntil) >= now && Date.parse(r.forecast.targetAt) > now) && Date.parse(r.forecast.capturedAt) <= Math.min(now, Date.parse(data.asOf)) && r.market.cadence === data.cadence && r.market.topicId === r.forecast.topicId && r.market.targetAt === r.forecast.targetAt && r.forecast.source === data.source && r.market.source === data.source && !!distributionRanges(r.forecast.buckets);
+    const observedReference = sentimentReference(data, now);
+    // Transport freshness controls Live, not whether a retained distribution can be drawn.
+    const eligible = (r: TimelineTarget) => {
+      const f = r.forecast, m = r.market;
+      if (now === null || !Number.isFinite(now) || !f || !m || !["live", "demo"].includes(data.source)) return false;
+      if (r.kind !== "past" && (!Number.isSafeInteger(f.snapshotId) || f.snapshotId <= 0 || !Number.isSafeInteger(f.topicId) || f.topicId <= 0 || !["quote-share-v1", "quote-share-v2"].includes(f.transformationVersion) || f.interpretation !== "quote-share-not-calibrated" || !Number.isFinite(f.originalYesSum) || f.originalYesSum <= 0 || !Number.isFinite(f.normalizationFactor) || f.normalizationFactor <= 0)) return false;
+      if (m.cadence !== data.cadence || m.topicId !== f.topicId || m.targetAt !== f.targetAt || (r.targetAt !== undefined && r.targetAt !== f.targetAt) || f.source !== data.source || m.source !== data.source || !(Date.parse(f.capturedAt) <= Math.min(now, Date.parse(data.asOf))) || !distributionRanges(f.buckets)) return false;
+      if (r.provenance && (r.provenance.snapshotId !== f.snapshotId || r.provenance.capturedAt !== f.capturedAt)) return false;
+      if (r.kind !== "past" && (m.resolvedOptionId !== null || new Set(f.buckets.map(b => b.optionId)).size !== f.buckets.length || f.buckets.some(b => !Number.isSafeInteger(b.optionId) || b.optionId <= 0 || !Number.isFinite(b.yes) || b.yes < 0 || !Number.isFinite(b.no) || b.no < 0))) return false;
+      if (!f.summary?.modalBucket || !f.buckets.some(b => b.lower === f.summary.modalBucket.lower && b.upper === f.summary.modalBucket.upper && b.probability === f.summary.modalBucket.probability && b.probability === Math.max(...f.buckets.map(bin => bin.probability)))) return false;
+      return r.kind === "past" ? r.status === "ready" && eligibleArchive(r, data.cadence) && Date.parse(m.targetAt) <= Math.min(now, Date.parse(data.asOf)) : (r.status === "ready" || r.status === "stale") && Date.parse(f.targetAt) > now;
+    };
    const targets = [...data.targets].sort((a, b) => Date.parse(a.targetAt ?? a.market?.targetAt ?? "") - Date.parse(b.targetAt ?? b.market?.targetAt ?? ""));
    const referenceResult = targets.find(r => r.kind !== "past" && eligible(r));
   const reference = referenceResult ? { targetAt: referenceResult.market!.targetAt, ranges: distributionRanges(referenceResult.forecast!.buckets)! } : null;
@@ -208,7 +218,8 @@ export function projectionModel(data: TimelineResult, now: number | null, cached
      const observed = completedObservation(result, data, now)?.value ?? null;
     const heatmapAvailable = eligible(result) && compatible(result);
     const available = eligible(result) && (mode === "range" || compatible(result));
-    const reason = cached ? "Cached, not live" : result.status === "ready" && result.forecast && !distributionRanges(result.forecast.buckets) ? "Invalid distribution" : !eligible(result) ? result.status === "ready" ? "Stale or expired" : result.status : !compatible(result) ? "Incompatible price bins" : data.source === "demo" ? "Demo" : "Live";
+    const live = kind === "future" && available && !cached && data.source === "live" && result.status === "ready" && !!result.freshUntil && Date.parse(result.freshUntil) >= now!;
+    const reason = !eligible(result) ? result.status === "ready" ? "Invalid or expired forecast" : result.status : !available ? "Incompatible price bins" : cached ? "Cached forecast" : data.source === "demo" ? "Demo" : live ? "Live" : "Stale forecast";
     const masses = rows.map(() => 0);
     let omittedMass = 0;
     // Geometry is only for display; canonical grid indices assign each whole bin once.
@@ -219,7 +230,7 @@ export function projectionModel(data: TimelineResult, now: number | null, cached
     }
     const ranges = eligible(result) ? distributionRanges(result.forecast!.buckets) : null;
      const sentiment = kind === "future" && eligible(result) ? distributionSentiment(result.forecast!.buckets, observedReference) : unavailableSentiment();
-     return { result, kind, observed, topicId: result.market?.topicId ?? -Date.parse(targetAt), targetAt, available, reason: kind === "past" ? available ? "Archived" : "No eligible archived forecast" : available ? data.source === "demo" ? "Demo" : "Live" : reason, midpoint: available ? modalMidpoint(result.forecast!.summary.modalBucket) : null, ranges: available ? ranges : null, masses, heatmapAvailable, omittedMass: mode === "heatmap" && heatmapAvailable ? omittedMass : null, outlook: kind === "future" ? sentimentOutlook(sentiment, ranges) : "unavailable", direction: "unavailable", sentiment };
+     return { result, kind, observed, topicId: result.market?.topicId ?? -Date.parse(targetAt), targetAt, available, live, reason: kind === "past" ? available ? "Archived" : "No eligible archived forecast" : reason, midpoint: available ? modalMidpoint(result.forecast!.summary.modalBucket) : null, ranges: available ? ranges : null, masses, heatmapAvailable, omittedMass: mode === "heatmap" && heatmapAvailable ? omittedMass : null, outlook: kind === "future" ? sentimentOutlook(sentiment, ranges) : "unavailable", direction: "unavailable", sentiment };
   });
   const segments: number[][] = [];
   const bandSegments: number[][] = [];

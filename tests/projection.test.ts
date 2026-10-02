@@ -11,6 +11,40 @@ function target(i: number, overrides: Partial<ForecastResult> = {}): ForecastRes
 }
 const data = (targets: TimelineTarget[]): TimelineResult => ({ cadence: "hourly", asOf: new Date(now).toISOString(), collectedAt: new Date(now).toISOString(), source: "live", targets });
 describe("whole-bin projection", () => {
+  it.each(["range", "heatmap"] as const)("retains cached and stale %s evidence until settlement without changing captures or shares", mode => {
+    const timeline = data([target(0), target(1)]);
+    const original = structuredClone(timeline);
+    const fresh = projectionModel(timeline, now, false, mode);
+    expect(fresh.columns.every(c => c.live)).toBe(true);
+    const cached = projectionModel(timeline, now, true, mode, 2);
+    expect(cached.columns.every(c => c.available && !c.live && c.reason === "Cached forecast")).toBe(true);
+    expect(cached.reference).toEqual(fresh.reference);
+    if (mode === "heatmap") expect(cached.focus?.topicId).toBe(2);
+    const stale = projectionModel(timeline, now + 300001, false, mode);
+    expect(stale.columns.every(c => c.available && !c.live && c.reason === "Stale forecast")).toBe(true);
+    expect(stale.columns.map(c => c.masses)).toEqual(fresh.columns.map(c => c.masses));
+    expect(projectionModel(data([{ ...target(0), status: "stale" }]), now, false, mode).columns[0]).toMatchObject({ available: true, live: false });
+    expect(projectionModel(timeline, now + 3600000, true, mode).columns[0]).toMatchObject({ available: false, live: false });
+    expect(horizonTargets(timeline, now + 7200000, 7).targets).toEqual([]);
+    expect(timeline).toEqual(original);
+  });
+  it("retains old captures for a still-future target without an arbitrary age limit", () => {
+    const r = target(0), targetAt = new Date(now + 14 * 86400000).toISOString();
+    r.market!.targetAt = targetAt; r.forecast!.targetAt = targetAt;
+    expect(projectionModel(data([r]), now + 2 * 86400000, true, "range").columns[0]).toMatchObject({ available: true, live: false });
+  });
+  it.each([
+    { capturedAt: new Date(now + 1).toISOString() }, { topicId: 99 }, { source: "demo" },
+    { transformationVersion: "unknown" }, { originalYesSum: 0 }, { normalizationFactor: -1 },
+    { snapshotId: 0 }, { buckets: buckets.map((b, i) => ({ ...b, probability: i === 0 ? -1 : b.probability })) },
+    { buckets: buckets.map((b, i) => ({ ...b, yes: i === 0 ? NaN : b.yes })) },
+    { buckets: buckets.map(b => ({ ...b, optionId: 1 })) }, { buckets: null }, { buckets: [null] },
+  ])("does not mask newly invalid retained payloads (%j)", override => {
+    const valid = target(0);
+    expect(projectionModel(data([valid]), now, true).columns[0].available).toBe(true);
+    const invalid = { ...valid, forecast: { ...valid.forecast!, ...override } } as ForecastResult;
+    expect(projectionModel(data([invalid]), now, true).columns[0]).toMatchObject({ available: false, live: false, ranges: null });
+  });
   it.each(["hourly", "daily"] as const)("joins eligible %s archived and future bands without merging line phases or bypassing gaps", cadence => {
     const step = cadence === "daily" ? 86400000 : 3600000;
     const historical = target(0) as TimelineTarget;
@@ -31,12 +65,12 @@ describe("whole-bin projection", () => {
     expect(model.columns[0].observed).toBeNull();
     expect(projectionModel({ ...timeline, targets: [historical, future[1]] }, now, false, "range").bandSegments).toEqual([[0], [1]]);
     expect(projectionModel({ ...timeline, targets: [{ ...historical, forecast: null }, ...future] }, now, false, "range").bandSegments).toEqual([[1, 2]]);
-    expect(projectionModel(timeline, now, true, "range").bandSegments).toEqual([[0]]);
-    for (const status of ["stale", "invalid", "expired", "unavailable"] as const) {
+    expect(projectionModel(timeline, now, true, "range").bandSegments).toEqual([[0, 1, 2]]);
+    for (const status of ["invalid", "expired", "unavailable"] as const) {
       expect(projectionModel({ ...timeline, targets: [historical, { ...future[0], status }, future[1]] }, now, false, "range").bandSegments).toEqual([[0], [2]]);
     }
     const expired = { ...future[0], freshUntil: new Date(now - 1).toISOString() };
-    expect(projectionModel({ ...timeline, targets: [historical, expired, future[1]] }, now, false, "range").bandSegments).toEqual([[0], [2]]);
+    expect(projectionModel({ ...timeline, targets: [historical, expired, future[1]] }, now, false, "range").bandSegments).toEqual([[0, 1, 2]]);
     const wrongSource = { ...future[0], forecast: { ...future[0].forecast, source: "demo" as const } };
     expect(projectionModel({ ...timeline, targets: [historical, wrongSource, future[1]] }, now, false, "range").bandSegments).toEqual([[0], [2]]);
   });
@@ -113,7 +147,7 @@ describe("whole-bin projection", () => {
     const timeline = { ...data(daily), cadence: "daily" as const };
     for (const horizon of [3, 7, 14] as const) expect(horizonTargets(timeline, now, horizon).targets).toHaveLength(horizon);
     timeline.targets = daily.filter((_, i) => i !== 1);
-    timeline.targets[2] = { ...timeline.targets[2], status: "stale" };
+    timeline.targets[2] = { ...timeline.targets[2], status: "invalid" };
     const model = projectionModel(timeline, now, false, "range");
     const slots = dailySlots(model.columns, now, 14);
     expect(slots).toHaveLength(14); expect(slots[1].column).toBeNull();
@@ -157,18 +191,18 @@ describe("whole-bin projection", () => {
     for (const column of model.columns) expect(column.masses.reduce((a, b) => a + b, 0)).toBeCloseTo(1);
     expect(model.segments).toEqual([[0, 1]]);
   });
-  it("does not bridge stale, invalid, expired, cached, or absent targets", () => {
-    expect(projectionModel(data([target(0), target(1, { status: "stale" }), target(2), target(4)]), now).segments).toEqual([[0], [2], [3]]);
+  it("does not bridge invalid, expired, or absent targets", () => {
+    expect(projectionModel(data([target(0), target(1, { status: "invalid" }), target(2), target(4)]), now).segments).toEqual([[0], [2], [3]]);
     for (const status of ["invalid", "expired", "unavailable"] as const) expect(projectionModel(data([target(0), target(1, { status })]), now).columns[1].available).toBe(false);
-    expect(projectionModel(data([target(0), target(1)]), now, true).segments).toEqual([]);
-    expect(projectionModel(data([target(0)]), now + 300001).segments).toEqual([]);
+    expect(projectionModel(data([target(0), target(1)]), now, true).segments).toEqual([[0, 1]]);
+    expect(projectionModel(data([target(0)]), now + 300001).segments).toEqual([[0]]);
     expect(projectionModel(data([target(0)]), now + 3600000).segments).toEqual([]);
     expect(projectionModel(data([target(0)]), null).segments).toEqual([]);
   });
   it("rejects unequal widths and nonaligned boundaries without splitting probability mass", () => {
     const second = target(1); second.forecast = { ...second.forecast!, buckets: buckets.map((b, i) => ({ ...b, lower: b.lower + (i === 1 ? 100 : 0) })) };
     const model = projectionModel(data([target(0), second]), now);
-    expect(model.columns[1].reason).toBe("Invalid distribution"); expect(model.columns[1].masses.every(p => p === 0)).toBe(true);
+    expect(model.columns[1].reason).toBe("Invalid or expired forecast"); expect(model.columns[1].masses.every(p => p === 0)).toBe(true);
   });
   it("aggregates whole adjacent bins into at most 40 readable rows and retains original tie semantics", () => {
     const wide = target(0); const many = Array.from({ length: 100 }, (_, i) => ({ ...buckets[0], optionId: i + 1, label: `${i * 1000}-${(i + 1) * 1000}`, lower: i * 1000, upper: (i + 1) * 1000, probability: .01, quoteShare: .01 }));
@@ -211,7 +245,7 @@ describe("market outlook and focused heatmap", () => {
   it("focuses on selected whole-bin central90 plus two bins, not the horizon envelope", () => {
     const targets = [target(0), target(1)];
     targets.forEach((result, j) => {
-      const bins = Array.from({ length: 100 }, (_, i) => ({ ...buckets[0], lower: 25000 + i * 1000, upper: 26000 + i * 1000, probability: i === 59 + j ? .92 : i === 0 || i === 99 ? .04 : 0 }));
+      const bins = Array.from({ length: 100 }, (_, i) => ({ ...buckets[0], optionId: i + 1, lower: 25000 + i * 1000, upper: 26000 + i * 1000, probability: i === 59 + j ? .92 : i === 0 || i === 99 ? .04 : 0 }));
       result.forecast = { ...result.forecast!, buckets: bins, summary: summarize(bins) };
     });
     const model = projectionModel(data(targets), now);
@@ -236,7 +270,7 @@ describe("market outlook and focused heatmap", () => {
   it("clips other high-focus targets and accounts for their entire omitted mass without renormalizing", () => {
     const targets = [target(0), target(1)];
     targets.forEach((result, j) => {
-      const bins = Array.from({ length: 500 }, (_, i) => ({ ...buckets[0], lower: 25000 + i * 200, upper: 25200 + i * 200, probability: i === (j ? 420 : 297) ? .92 : i === 0 || i === 499 ? .04 : 0 }));
+      const bins = Array.from({ length: 500 }, (_, i) => ({ ...buckets[0], optionId: i + 1, lower: 25000 + i * 200, upper: 25200 + i * 200, probability: i === (j ? 420 : 297) ? .92 : i === 0 || i === 499 ? .04 : 0 }));
       result.forecast = { ...result.forecast!, buckets: bins, summary: summarize(bins) };
     });
     const model = projectionModel(data(targets), now, false, "heatmap", 1);
@@ -249,17 +283,17 @@ describe("market outlook and focused heatmap", () => {
     expect([high.lower, high.upper]).toEqual([108600, 109600]);
     expect(high.columns[0].omittedMass).toBeCloseTo(1);
     expect(high.reference).toEqual(model.reference);
-    targets[1].status = "stale";
+    targets[1].status = "invalid";
     const fallback = projectionModel(data(targets), now, false, "heatmap", 2);
     expect(fallback.focus).toMatchObject({ topicId: 1, fallback: true });
     expect(fallback.columns[1].omittedMass).toBeNull();
-    expect(projectionModel(data(targets), now, true, "heatmap", 2).focus).toBeNull();
+    expect(projectionModel(data(targets), now, true, "heatmap", 2).focus).toMatchObject({ topicId: 1, fallback: true });
     expect(projectionModel(data(targets), now, false, "heatmap", 999).focus).toMatchObject({ topicId: 1, fallback: true });
   });
   it("keeps 24-40 whole-bin rows when support allows and uniform groups except the disclosed final row", () => {
     for (const count of [24, 41, 47, 81, 100, 500]) {
       const result = target(0);
-      const bins = Array.from({ length: count }, (_, i) => ({ ...buckets[0], lower: i / 10, upper: (i + 1) / 10, probability: 1 / count }));
+      const bins = Array.from({ length: count }, (_, i) => ({ ...buckets[0], optionId: i + 1, lower: i / 10, upper: (i + 1) / 10, probability: 1 / count }));
       result.forecast = { ...result.forecast!, buckets: bins, summary: summarize(bins) };
       const model = projectionModel(data([result]), now);
       expect(model.rows.length).toBeGreaterThanOrEqual(24);
@@ -278,7 +312,7 @@ describe("market outlook and focused heatmap", () => {
     expect(quoteShareLabel(0)).toBe("0.0%");
   });
   it("navigates nonzero bands and skips unavailable columns without synthetic tab stops", () => {
-    const model = projectionModel(data([target(0), target(1, { status: "stale" }), target(2)]), now);
+    const model = projectionModel(data([target(0), target(1, { status: "invalid" }), target(2)]), now);
     model.columns[0].masses = [.4, 0, .6]; model.columns[2].masses = [0, 1, 0];
     expect(nextHeatmapCell(model.columns, model.rows, { column: 0, row: 0 }, "ArrowUp")).toEqual({ column: 0, row: 2 });
     expect(nextHeatmapCell(model.columns, model.rows, { column: 0, row: 0 }, "ArrowRight")).toEqual({ column: 2, row: 1 });
@@ -294,8 +328,8 @@ describe("market outlook and focused heatmap", () => {
     expect(model.columns[0].omittedMass).toBe(0);
     expect(model.rows.every(row => bins.some(b => b.lower === row.lower) && bins.some(b => b.upper === row.upper))).toBe(true);
   });
-  it("selects the earliest valid reference after stale gaps without connecting them", () => {
-    const model = projectionModel(data([target(3), target(0, { status: "stale" }), target(1)]), now);
+  it("selects the earliest valid reference after invalid gaps without connecting them", () => {
+    const model = projectionModel(data([target(3), target(0, { status: "invalid" }), target(1)]), now);
     expect(model.reference?.targetAt).toBe(target(1).market!.targetAt);
     expect(model.columns.map(c => c.outlook)).toEqual(["unavailable", "unavailable", "unavailable"]);
     expect(model.segments).toEqual([[1], [2]]);
@@ -312,7 +346,7 @@ describe("market outlook and focused heatmap", () => {
       expect(model.columns.map(c => c.direction)).toEqual(["unavailable", "lower", "higher"]);
       expect(model.columns.map(c => c.outlook)).toEqual(["unavailable", "unavailable", "unavailable"]);
       expect(model.reference?.ranges.midpoint).toBe(86000);
-      for (const status of ["stale", "invalid", "expired", "unavailable"] as const) {
+      for (const status of ["invalid", "expired", "unavailable"] as const) {
         expect(projectionModel(data([targets[0], { ...targets[1], status }, targets[2]]), now, false, mode).columns[2].direction).toBe("unavailable");
       }
       expect(projectionModel(data([targets[0], targets[2]]), now, false, mode).columns[1].direction).toBe("unavailable");
@@ -331,7 +365,7 @@ describe("market outlook and focused heatmap", () => {
   it("uses modal direction in Heatmap and median direction in Range when they diverge", () => {
     const targets = [target(0), target(1)];
     targets.forEach((result, j) => {
-      const bins = Array.from({ length: 5 }, (_, i) => ({ ...buckets[0], lower: 84000 + i * 200, upper: 84200 + i * 200, probability: (j ? [.4, 0, 0, .35, .25] : [0, .25, .4, .35, 0])[i] }));
+      const bins = Array.from({ length: 5 }, (_, i) => ({ ...buckets[0], optionId: i + 1, lower: 84000 + i * 200, upper: 84200 + i * 200, probability: (j ? [.4, 0, 0, .35, .25] : [0, .25, .4, .35, 0])[i] }));
       result.forecast = { ...result.forecast!, buckets: bins, summary: summarize(bins) };
     });
     expect(projectionModel(data(targets), now, false, "range").columns[1]).toMatchObject({ direction: "higher", outlook: "unavailable" });
@@ -389,7 +423,7 @@ describe("observed-reference whole-bin sentiment", () => {
   it("keeps full-distribution sentiment across clipped views and unavailable future forecasts", () => {
     const results = [target(0), target(1)];
     results.forEach((r, j) => {
-      const bs = Array.from({ length: 100 }, (_, i) => ({ ...buckets[0], lower: i * 100, upper: (i + 1) * 100, probability: i === (j ? 80 : 40) ? .92 : i === 0 || i === 99 ? .04 : 0 }));
+      const bs = Array.from({ length: 100 }, (_, i) => ({ ...buckets[0], optionId: i + 1, lower: i * 100, upper: (i + 1) * 100, probability: i === (j ? 80 : 40) ? .92 : i === 0 || i === 99 ? .04 : 0 }));
       r.forecast = { ...r.forecast!, buckets: bs, summary: summarize(bs) };
     });
     const timeline = data([past(), ...results]);
@@ -399,8 +433,8 @@ describe("observed-reference whole-bin sentiment", () => {
     expect(heatmap.columns.map(c => c.sentiment)).toEqual(range.columns.map(c => c.sentiment));
     expect(heatmap.columns[2].sentiment).toMatchObject({ label: "Bullish", down: .04, undecided: 0 });
     expect(heatmap.columns[2].sentiment.up).toBeCloseTo(.96);
-    for (const status of ["stale", "invalid", "expired", "unavailable"] as const) expect(projectionModel(data([past(), { ...results[0], status }]), now).columns[1].sentiment.label).toBeNull();
-    expect(projectionModel(timeline, now, true).columns[1].sentiment.label).toBeNull();
+    for (const status of ["invalid", "expired", "unavailable"] as const) expect(projectionModel(data([past(), { ...results[0], status }]), now).columns[1].sentiment.label).toBeNull();
+    expect(projectionModel(timeline, now, true).columns[1].sentiment).toEqual(range.columns[1].sentiment);
     expect(projectionModel(data([past(), { ...results[0], forecast: { ...results[0].forecast!, capturedAt: new Date(now + 1).toISOString() } }]), now).columns[1].sentiment.label).toBeNull();
     expect(range.columns[0].sentiment.label).toBeNull();
   });

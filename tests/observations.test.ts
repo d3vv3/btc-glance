@@ -118,7 +118,7 @@ it("validates both archive policies and original capture metadata independently 
     expect(column({ ...legacy, archive: { ...legacy.archive!, policy: "fixed-lead" } }).available).toBe(true);
     expect(column({ ...legacy, forecast: { ...legacy.forecast!, capturedAt: new Date(end - 3599999).toISOString() }, provenance: undefined }).available).toBe(false);
     const futureAt = new Date(end + 3600000).toISOString();
-    const future: TimelineTarget = { ...original, kind: "future", archive: undefined, targetAt: futureAt, market: { ...m, targetAt: futureAt }, forecast: { ...original.forecast!, targetAt: futureAt, capturedAt: new Date(end).toISOString() }, freshUntil: new Date(end + 300000).toISOString() };
+    const future: TimelineTarget = { ...original, kind: "future", archive: undefined, provenance: { ...original.provenance!, capturedAt: new Date(end).toISOString() }, targetAt: futureAt, market: { ...m, targetAt: futureAt }, forecast: { ...original.forecast!, targetAt: futureAt, capturedAt: new Date(end).toISOString() }, freshUntil: new Date(end + 300000).toISOString() };
     const gap = projectionModel({ ...data, targets: [original, future] }, end, false, "range");
     expect(gap.columns.every(c => c.available)).toBe(true);
     expect(gap.columns[1].direction).toBe("unavailable"); // Missing close breaks the actual comparison, not archived bands.
