@@ -20,6 +20,8 @@ describe("independent app routes", () => {
   it("uses pathname links with page semantics and real manifest shortcuts", () => {
     const navigation = readFileSync(new URL("../src/components/Navigation.tsx", import.meta.url), "utf8");
     expect(navigation).toContain("usePathname"); expect(navigation).toContain('"page"'); expect(navigation).not.toContain('role="tab"');
+    expect(navigation).toContain('import Link from "next/link"'); expect(navigation).toContain("<Link key={path}");
+    expect(navigation).toContain("scroll={false}");
     expect(manifest().shortcuts?.map(s => s.url)).toEqual(["/", "/watches", "/history"]);
     for (const route of ["watches", "history"]) expect(readFileSync(new URL(`../src/app/${route}/page.tsx`, import.meta.url), "utf8")).toContain("export default");
   });

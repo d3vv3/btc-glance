@@ -20,6 +20,7 @@ vi.mock("react", async original => ({
 }));
 vi.mock("../src/client/api", () => ({ publicRead: reads.public, api: { forecasts: { freshness: { query: reads.freshness } } } }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+vi.mock("next/link", () => ({ default: "a" }));
 import { Projection } from "../src/components/Projection";
 import { WeatherApp } from "../src/components/WeatherApp";
 import { Navigation } from "../src/components/Navigation";
@@ -79,6 +80,7 @@ describe("forecast refresh and boundary safety", () => {
     unavailable.find(node => node.type === "button" && nodes(node).some(child => child.props.children === "Retry" || Array.isArray(child.props.children) && child.props.children.includes("Retry")))!.props.onClick();
     await settle();
     expect(reads.public).toHaveBeenCalledTimes(2);
+    expect(reads.public.mock.calls[1][2]).toEqual({ force: true });
     expect(nodes(render(component)).some(node => node.props.className === "projection-price-axis")).toBe(true);
   });
 
@@ -87,6 +89,23 @@ describe("forecast refresh and boundary safety", () => {
     render(() => WeatherApp()); effect(1); await settle();
     return render(() => WeatherApp());
   };
+  it("reuses real public reads on remount without turning aged evidence Live", async () => {
+    const actual = await vi.importActual<typeof import("../src/client/api")>("../src/client/api");
+    actual.invalidatePublicReads();
+    const fetcher = vi.fn(async (path: string) => Response.json(path === "/api/markets" ? { markets: [market], source: "live", collectedAt: new Date(now).toISOString() } : { ...forecast, freshUntil: new Date(now + 30000).toISOString() }));
+    vi.stubGlobal("fetch", fetcher);
+    reads.public.mockImplementation(actual.publicRead);
+    try {
+      expect(nodes(await mountWeather()).some(node => node.props["aria-label"] === "Live")).toBe(true);
+      cleanups.splice(0).forEach(fn => fn()); hooks.states = []; hooks.refs = [];
+      vi.setSystemTime(now + 31000);
+      expect(nodes(await mountWeather()).some(node => node.props["aria-label"] === "Stale")).toBe(true);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      cleanups.splice(0).forEach(fn => fn()); hooks.states = []; hooks.refs = [];
+      vi.setSystemTime(now + 60000); await mountWeather();
+      expect(fetcher).toHaveBeenCalledTimes(4);
+    } finally { actual.invalidatePublicReads(); }
+  });
   it("keeps historical evidence and status without a latest-outlook action or banner", async () => {
     vi.stubGlobal("location", { href: "https://weather.example.com/?snapshotId=1", search: "?snapshotId=1" });
     const elements = nodes(await mountWeather());

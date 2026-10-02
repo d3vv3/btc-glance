@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { Bell, ChartNoAxesCombined, History } from "lucide-react";
 import { selectionHref } from "../lib/selection";
 
@@ -14,5 +15,5 @@ export function Navigation() {
     read(); window.addEventListener("weather-selection", read); window.addEventListener("popstate", read);
     return () => { window.removeEventListener("weather-selection", read); window.removeEventListener("popstate", read); };
   }, [pathname]);
-  return <><div className="navigation-fade" aria-hidden="true" /><nav className="app-navigation" aria-label="Main navigation">{destinations.map(({ path, label, Icon }) => <a key={path} href={selectionHref(path, search)} aria-current={pathname === path ? "page" : undefined}><Icon size={21} aria-hidden="true" /><span>{label}</span></a>)}</nav></>;
+  return <><div className="navigation-fade" aria-hidden="true" /><nav className="app-navigation" aria-label="Main navigation">{destinations.map(({ path, label, Icon }) => <Link key={path} href={selectionHref(path, search)} scroll={false} aria-current={pathname === path ? "page" : undefined}><Icon size={21} aria-hidden="true" /><span>{label}</span></Link>)}</nav></>;
 }

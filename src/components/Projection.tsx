@@ -44,18 +44,19 @@ export function Projection({ cadence, now, offline, topic, onSelect, onHistorica
     let controller: AbortController | undefined;
     initialScroll.current = null;
     setData(null); setCachedAt(null); setError(""); setInspected(null);
-    const load = async () => {
+    const load = async (force = false) => {
       const request = ++generation;
       controller?.abort();
       controller = new AbortController();
-      try { const response = await publicRead<TimelineResult>(`/api/forecasts/timeline?cadence=${cadence}&limit=32`, controller.signal); if (alive && request === generation) { setData(response.data); setCachedAt(response.cachedAt); setError(""); } }
+      try { const response = await publicRead<TimelineResult>(`/api/forecasts/timeline?cadence=${cadence}&limit=32`, controller.signal, { force }); if (alive && request === generation) { setData(response.data); setCachedAt(response.cachedAt); setError(""); } }
       catch { if (alive && request === generation) setError("Projection unavailable"); }
     };
-    retry.current = () => { void load(); };
-    void load(); const wake = () => { if (document.visibilityState === "visible") void load(); };
+    retry.current = () => { void load(true); };
+    void load(); const wake = () => { if (document.visibilityState === "visible") { setClock(Date.now()); void load(); } };
+    const reconnect = () => { setClock(Date.now()); void load(true); };
     const timer = setInterval(wake, 60000);
-    window.addEventListener("online", wake); window.addEventListener("focus", wake); document.addEventListener("visibilitychange", wake);
-    return () => { alive = false; retry.current = () => {}; controller?.abort(); clearInterval(timer); window.removeEventListener("online", wake); window.removeEventListener("focus", wake); document.removeEventListener("visibilitychange", wake); };
+    window.addEventListener("online", reconnect); window.addEventListener("focus", wake); document.addEventListener("visibilitychange", wake);
+    return () => { alive = false; retry.current = () => {}; controller?.abort(); clearInterval(timer); window.removeEventListener("online", reconnect); window.removeEventListener("focus", wake); document.removeEventListener("visibilitychange", wake); };
   }, [cadence]);
   const current = now === null ? clock : Math.max(now, clock ?? now);
    const model = data && data.cadence === cadence && current !== null ? projectionModel(horizonTargets(data, current, horizon), current, offline || !!cachedAt || !!error, view, topic ?? inspected) : null;

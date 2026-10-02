@@ -57,6 +57,8 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
   const autoSelect = useRef(true);
   const boundaryTarget = useRef<string | null>(null);
   const boundaryEdited = useRef(false);
+  const forceForecast = useRef(false);
+  const retryForecast = () => { forceForecast.current = true; void refreshMarkets(true); setRetry(value => value + 1); };
   const chooseBoundary = (value: number) => { boundaryEdited.current = true; setThreshold(value); };
   const select = useCallback((id: number, preserveWatch = false, keepBoundaryContext = false) => {
     autoSelect.current = false;
@@ -97,9 +99,9 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
     ["market", "topicId", "watch"].forEach(key => url.searchParams.delete(key));
     history.replaceState(null, "", url); window.dispatchEvent(new Event("weather-selection"));
   };
-  const refreshMarkets = useCallback(async () => {
+  const refreshMarkets = useCallback(async (force = false) => {
     try {
-      const response = await publicRead<MarketsResult>("/api/markets");
+      const response = await publicRead<MarketsResult>("/api/markets", undefined, { force });
       setMarkets(response.data); setMarketCachedAt(response.cachedAt);
       if (autoSelect.current && topicRef.current === null && snapshotRef.current === null && response.data.markets.length) {
         const first = response.data.markets.find(m => m.cadence === (mode === "outlook" ? "daily" : "hourly")) ?? response.data.markets[0];
@@ -128,7 +130,7 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
     };
     readLocation();
     setNow(Date.now()); setOffline(!navigator.onLine);
-    const network = () => { setNow(Date.now()); setOffline(!navigator.onLine); if (navigator.onLine) void refreshMarkets(); };
+    const network = () => { setNow(Date.now()); setOffline(!navigator.onLine); if (navigator.onLine) void refreshMarkets(true); };
     const foreground = () => { if (document.visibilityState === "visible") { setNow(Date.now()); void refreshMarkets(); } };
     const pop = () => { readLocation(); void refreshMarkets(); };
     window.addEventListener("online", network); window.addEventListener("offline", network); window.addEventListener("popstate", pop);
@@ -140,12 +142,13 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
   useEffect(() => {
     if (!topic && snapshotId === null) return;
     let alive = true;
-    const load = async () => {
+    const load = async (force = false) => {
       const request = ++requestId.current;
       try {
         if (snapshotId !== null && (!/^[1-9]\d*$/.test(snapshotId) || !Number.isSafeInteger(Number(snapshotId)))) throw new Error("Invalid historical snapshot ID.");
         // The public response carries the server-validated freshness deadline, including offline evidence.
-        const response = await publicRead<ForecastResult>(snapshotId !== null ? `/api/forecasts/snapshot?snapshotId=${snapshotId}` : `/api/forecasts?topicId=${topic}`);
+        const path = snapshotId !== null ? `/api/forecasts/snapshot?snapshotId=${snapshotId}` : `/api/forecasts?topicId=${topic}`;
+        const response = await (force ? publicRead<ForecastResult>(path, undefined, { force: true }) : publicRead<ForecastResult>(path));
         if (!alive || request !== requestId.current) return;
         if (snapshotId !== null && response.data.forecast && response.data.forecast.snapshotId !== Number(snapshotId)) throw new Error("Historical snapshot does not match the requested evidence.");
         const data = response.data;
@@ -165,11 +168,12 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
       } catch (e) { if (alive && request === requestId.current) setForecastError(e instanceof Error ? e.message : "Forecast unavailable."); }
        finally { if (alive && request === requestId.current) setLoading(false); }
     };
-    void load();
+    void load(forceForecast.current); forceForecast.current = false;
     const timer = snapshotId === null ? setInterval(() => { if (document.visibilityState === "visible") void load(); }, 60000) : undefined;
     const wake = () => { if (document.visibilityState === "visible") { setNow(Date.now()); void load(); } };
-    window.addEventListener("online", wake); window.addEventListener("focus", wake); document.addEventListener("visibilitychange", wake);
-    return () => { alive = false; clearInterval(timer); window.removeEventListener("online", wake); window.removeEventListener("focus", wake); document.removeEventListener("visibilitychange", wake); };
+    const reconnect = () => { setNow(Date.now()); void load(true); };
+    window.addEventListener("online", reconnect); window.addEventListener("focus", wake); document.addEventListener("visibilitychange", wake);
+    return () => { alive = false; clearInterval(timer); window.removeEventListener("online", reconnect); window.removeEventListener("focus", wake); document.removeEventListener("visibilitychange", wake); };
   }, [topic, snapshotId, retry]);
   useEffect(() => {
     if (!result?.forecast) return;
@@ -208,13 +212,13 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
           cadenceControls={<div className="segmented" aria-label="Market cadence">{(["hourly", "daily"] as const).map(c => <button key={c} aria-pressed={cadence === c} onClick={() => changeCadence(c)}>{c === "hourly" ? "Hourly" : "Daily"}</button>)}</div>}
           forecastLabel={<div className="outlook-meta"><p className="forecast-for">{targetAt ? <>Forecast for <time dateTime={targetAt} aria-label={localTime(targetAt)} title={localTime(targetAt)}>{compactTime(targetAt)}</time></> : "Bitcoin price forecast"}</p><span className={`status ${status === "Live" ? "ready" : ""}`} role="status" aria-label={offline ? "Offline" : marketCachedAt ? "Cached" : status}><i aria-hidden="true" /><span className="sr-only">{offline ? "Offline" : marketCachedAt ? "Cached" : status}</span></span></div>}
         />
-        {(error || forecastError) && forecast && <button className="icon-button" title="Retry" aria-label="Retry" onClick={() => { void refreshMarkets(); setRetry(value => value + 1); }}><RefreshCw size={16} /></button>}
+        {(error || forecastError) && forecast && <button className="icon-button" title="Retry" aria-label="Retry" onClick={retryForecast}><RefreshCw size={16} /></button>}
         {forecast ? <>
           {mode === "outlook" && <ForecastHeadline forecast={forecast} />}
           <div className="forecast-grid">{mode === "outlook" && <div className="distribution"><h2 className="distribution-title">Distribution</h2><div className="range-strip"><span>{coverageLabel(forecast.summary.central80.probability)}</span><strong>{money(forecast.summary.central80.lower)} - {money(forecast.summary.central80.upper)}</strong></div>{Number.isFinite(threshold) && <Histogram key={forecast.topicId} buckets={forecast.buckets} centralRange={forecast.summary.central80} operator={operator} threshold={threshold} onBoundary={chooseBoundary} />}</div>}
           <aside className="threshold-panel"><div className="probability" aria-live="polite"><div><span className="chance-label">Chance {operator} {Number.isFinite(threshold) ? money(threshold) : "Unavailable"}</span></div><strong>{probability === null ? "Unavailable" : percent(probability)}</strong>{mode === "outlook" && boundary !== null && <a href={selectionHref("/watches", typeof location === "undefined" ? "" : location.search, { threshold: boundary, operator })} title="Watch this boundary" aria-label="Watch this boundary"><ArrowRight size={22} /></a>}</div><div className="odds-controls"><div className="segmented" aria-label="Chance direction">{(["above", "below"] as const).map(o => <button key={o} aria-label={`Chance ${o}`} aria-pressed={operator === o} onClick={() => setOperator(o)}>{o === "above" ? "Above" : "Below"}</button>)}</div><select aria-label="Chance price" value={boundary ?? String(threshold)} onChange={e => chooseBoundary(Number(e.target.value))}>{boundary === null && <option value={String(threshold)} disabled>{Number.isFinite(threshold) ? money(threshold) : "Unavailable"}</option>}{boundaries.map(b => <option key={b} value={b}>{money(b)}</option>)}</select></div></aside></div>
           <div className="sr-only">Updated <time dateTime={forecast.capturedAt}>{compactTime(forecast.capturedAt)}</time></div>
-        </> : <div className="forecast-empty" aria-busy={loading}><Cloud size={64} strokeWidth={1} aria-hidden="true" /><h1 role="status">{loading ? "Loading..." : "Unavailable"}</h1>{!loading && <button className="primary" onClick={() => { void refreshMarkets(); setRetry(value => value + 1); }}><RefreshCw size={16} />Retry</button>}</div>}
+        </> : <div className="forecast-empty" aria-busy={loading}><Cloud size={64} strokeWidth={1} aria-hidden="true" /><h1 role="status">{loading ? "Loading..." : "Unavailable"}</h1>{!loading && <button className="primary" onClick={retryForecast}><RefreshCw size={16} />Retry</button>}</div>}
       </section>
   </>;
 }
