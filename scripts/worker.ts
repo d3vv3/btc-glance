@@ -4,6 +4,7 @@ import { config } from "../src/server/config";
 import { collect } from "../src/server/collector";
 import { GlimpseClient } from "../src/server/glimpse";
 import { deliverPush } from "../src/server/push";
+import { collectPrices } from "../src/server/prices";
 
 const db = openDatabase();
 const owner = randomUUID();
@@ -30,6 +31,7 @@ async function main() {
   try {
     do {
       const start = Date.now();
+      await collectPrices(db, controller.signal, hasLease);
       try { await collect(db, new GlimpseClient(controller.signal), Date.now(), { signal: controller.signal, hasLease }); if (!stopping) await deliverPush(db, Date.now, { signal: controller.signal, hasLease }); } catch (error) { if (!stopping) { console.error(error); if (once) process.exitCode = 1; } }
       if (once || stopping) break;
       const delay = Math.max(1000, config().COLLECT_INTERVAL_SECONDS * 1000 - (Date.now() - start));

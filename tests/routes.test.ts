@@ -14,7 +14,7 @@ describe("independent app routes", () => {
   });
   it("keeps owned watches and history out of Outlook", () => {
     const html = renderToStaticMarkup(createElement(WeatherApp));
-    expect(html).not.toContain('id="watches"'); expect(html).not.toContain('id="history"'); expect(html).toContain("Bitcoin weather");
+    expect(html).not.toContain('id="watches"'); expect(html).not.toContain('id="history"'); expect(html).toContain('id="outlook"'); expect(html).not.toMatch(/<h[1-6][^>]*>Outlook<\/h[1-6]>/);
     expect(renderToStaticMarkup(createElement<{ mode?: "outlook" | "watches" }>(WeatherApp, { mode: "watches" }))).toContain('id="watches"');
   });
   it("uses pathname links with page semantics and real manifest shortcuts", () => {

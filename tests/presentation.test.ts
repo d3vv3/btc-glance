@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
+import { readFileSync, readdirSync } from "node:fs";
 import { Histogram, coverageLabel, defaultBoundary } from "../src/components/Histogram";
 import { boundaryProbability, canonicalBoundary, currentForecastResult, ForecastHeadline, WeatherApp } from "../src/components/WeatherApp";
 import { isDisableOnly } from "../src/components/Watches";
@@ -27,16 +28,49 @@ describe("compact forecast presentation", () => {
     expect(isDisableOnly(null, { ...watch, enabled: false })).toBe(false);
     expect(isDisableOnly(saved, { ...watch, enabled: false, threshold: 1000 })).toBe(false);
   });
-  it("starts with an honest loading state and one forecast Details action", () => {
+  it("starts with an honest loading state without a details action", () => {
     const html = renderToStaticMarkup(createElement(WeatherApp));
-    expect(html).toContain("Checking the forecast");
-    expect(html).toContain("Getting market quotes...");
-    expect(html).toContain("Forecast details");
+    expect(html).toContain("Loading...");
+    expect(html).not.toContain("Getting market quotes");
+    expect(html).not.toContain("Forecast details");
+    expect(html).not.toMatch(/<(details|summary)\b/);
     expect(html).toContain("lucide-cloud");
     expect(html).not.toContain("weather-mark.png");
     expect(html).not.toContain("Awaiting a validated quote distribution");
     expect(html).not.toContain("failed checks /");
     expect(html).not.toContain("Settlement (UTC)");
+    expect(html).not.toContain('aria-label="Forecast time"');
+    expect(html).not.toContain("lucide-calendar-clock");
+    expect(html).not.toContain("Choose another time");
+    expect(html).toContain('aria-label="Market cadence"');
+    expect(html).toContain('aria-pressed="true">Daily');
+  });
+
+  it("keeps one cadence pair immediately before chart views even while the forecast is empty", () => {
+    const html = renderToStaticMarkup(createElement(WeatherApp));
+    for (const label of ["Market cadence", "Projection view", "Forecast horizon"]) {
+      expect(html.split(`aria-label="${label}"`)).toHaveLength(2);
+    }
+    expect(html).toMatch(/aria-label="Market cadence"[^]*?<\/div><div class="segmented" aria-label="Projection view"/);
+    expect(html.indexOf('aria-label="Projection view"')).toBeLessThan(html.indexOf('aria-label="Forecast horizon"'));
+    expect(html).toContain('aria-label="7 days" title="7 days" selected="">7d</option>');
+    expect(html.indexOf('aria-label="Projection view"')).toBeLessThan(html.indexOf('class="outlook-meta"'));
+    expect(html).not.toMatch(/<h[1-6][^>]*>Outlook<\/h[1-6]>/);
+    expect(html).not.toContain('class="forecast-toolbar"');
+    expect(html).not.toContain('aria-label="Forecast time"');
+    const watches = renderToStaticMarkup(createElement<{ mode?: "outlook" | "watches" }>(WeatherApp, { mode: "watches" }));
+    expect(watches).not.toContain('aria-label="Projection view"');
+  });
+
+  it("has no disclosure toggles anywhere in the frontend, preserving installation sheets", () => {
+    const directory = new URL("../src/components/", import.meta.url);
+    for (const file of readdirSync(directory).filter(file => file.endsWith(".tsx"))) {
+      const source = readFileSync(new URL(file, directory), "utf8");
+      expect(source, file).not.toMatch(/<(details|summary)\b|Inspect source|>Advanced</);
+      expect(source, file).not.toMatch(/className="(?:source-footnote|notice warning|notice demo)"|YES \/ sum\(YES\)|not investment advice|Alerts when market odds change|Original-bin Brier|Independent forecasts, not a joint price path/);
+      if (file !== "PwaControls.tsx") expect(source, file).not.toMatch(/<Sheet\b/);
+    }
+    expect(readFileSync(new URL("PwaControls.tsx", directory), "utf8")).toContain('<Sheet title="Install BTC glance"');
   });
 
   it("focuses on real central bins without rescaling their probabilities", () => {

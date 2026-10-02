@@ -5,15 +5,12 @@ import { publicRead } from "../client/api";
 import type { Bucket, Cadence, ForecastResult, MarketsResult, Operator } from "../lib/types";
 import { Histogram, coverageLabel, defaultBoundary, money, percent } from "./Histogram";
 import { Watches } from "./Watches";
-import { Cloud, Info, RefreshCw, CalendarClock, ArrowRight, ExternalLink } from "lucide-react";
+import { Cloud, RefreshCw, CalendarClock, ArrowRight } from "lucide-react";
 import { Projection } from "./Projection";
 import { selectionHref } from "../lib/selection";
-import { Sheet } from "./Sheet";
-import { groupDiagnostics } from "./diagnostics";
-import { distributionRanges, millisatsToSats, quoteMetrics } from "../lib/projection";
+import { distributionRanges } from "../lib/projection";
 
 const localTime = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "long" });
-const utcTime = (value: string) => new Date(value).toISOString().replace("T", " ").replace(/(?:\.000)?Z$/, " UTC");
 const compactTime = (value: string) => new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export function currentForecastResult(result: ForecastResult | null, now: number | null): ForecastResult | null {
@@ -37,26 +34,6 @@ export function ForecastHeadline({ forecast }: { forecast: NonNullable<ForecastR
   const median = distributionRanges(forecast.buckets)?.median;
   return <div className="outlook-intro"><div><span className="favored-label">Median range</span><h1>{median ? <>{money(median.lower)} <span>-</span> {money(median.upper)}</> : "Unavailable"}</h1></div></div>;
 }
-const sats = (value: number | null | undefined) => { const amount = millisatsToSats(value); return amount === null ? "Unavailable" : `${amount.toLocaleString(undefined, { maximumFractionDigits: 3 })} sats`; };
-const validationLabels: Record<string, string> = {
-  "pair-sum": "Historical v1 check: YES and NO quotes did not add up to 100 within tolerance",
-  "total-sum": "Historical v1 check: total YES quotes did not add up to 100 within tolerance",
-  schema: "Source data does not match the expected format",
-  resolved: "Market has already resolved",
-  coverage: "Quote count does not match the market outcomes",
-  duplicate: "Duplicate outcome IDs",
-  "quote-range": "Historical v1 check: quotes were outside 0..100",
-  "negative-quote": "YES or NO quotes are negative",
-  "zero-total": "Total YES quotes are zero",
-  "numeric-overflow": "Total YES quotes exceed numeric representability",
-  "numeric-representability": "Normalization factor exceeds numeric representability",
-  "bin-label": "Price ranges could not be read",
-  "bin-range": "Price ranges are invalid",
-  contiguity: "Price ranges have gaps or overlaps",
-  identity: "Quotes belong to a different market or settlement target",
-  "outcome-identity": "Quotes do not match the discovered outcomes",
-  "post-target": "Quotes were retrieved after the settlement target",
-};
 
 export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" } = {}) {
   const [markets, setMarkets] = useState<MarketsResult | null>(null);
@@ -76,15 +53,14 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
   const [now, setNow] = useState<number | null>(null);
   const topicRef = useRef<number | null>(null);
   const snapshotRef = useRef<string | null>(null);
-  const targetSelect = useRef<HTMLSelectElement>(null);
   const requestId = useRef(0);
   const autoSelect = useRef(true);
   const boundaryTarget = useRef<string | null>(null);
   const boundaryEdited = useRef(false);
   const chooseBoundary = (value: number) => { boundaryEdited.current = true; setThreshold(value); };
-  const select = useCallback((id: number, preserveWatch = false) => {
+  const select = useCallback((id: number, preserveWatch = false, keepBoundaryContext = false) => {
     autoSelect.current = false;
-    boundaryTarget.current = null; boundaryEdited.current = boundaryEdited.current || topicRef.current !== null;
+    boundaryTarget.current = null; boundaryEdited.current = keepBoundaryContext;
     ++requestId.current;
     snapshotRef.current = null; setSnapshotId(null);
     setRetry(value => value + 1);
@@ -110,6 +86,16 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
       history.replaceState(null, "", url);
       window.dispatchEvent(new Event("weather-selection"));
     }
+  };
+  const selectHistorical = (id: number) => {
+    autoSelect.current = false; ++requestId.current;
+    topicRef.current = null; setTopic(null);
+    boundaryTarget.current = null; boundaryEdited.current = false;
+    snapshotRef.current = String(id); setSnapshotId(String(id));
+    setResult(null); setCachedAt(null); setForecastError(""); setLoading(true);
+    const url = new URL(location.href); url.searchParams.set("snapshotId", String(id));
+    ["market", "topicId", "watch"].forEach(key => url.searchParams.delete(key));
+    history.replaceState(null, "", url); window.dispatchEvent(new Event("weather-selection"));
   };
   const refreshMarkets = useCallback(async () => {
     try {
@@ -205,7 +191,6 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
   const boundary = canonicalBoundary(forecast?.buckets ?? [], threshold);
   const probability = boundaryProbability(forecast?.buckets ?? [], threshold, operator);
   const expired = !!forecast && now !== null && Date.parse(forecast.targetAt) <= now;
-  const age = forecast && now !== null ? Math.max(0, Math.floor((now - Date.parse(forecast.capturedAt)) / 1000)) : null;
   const cached = offline || !!cachedAt;
   const historical = snapshotId !== null;
   const timedResult = historical ? result : currentForecastResult(result, now);
@@ -214,40 +199,22 @@ export function WeatherApp({ mode = "outlook" }: { mode?: "outlook" | "watches" 
   const visibleMarkets = markets?.markets.filter(m => m.cadence === cadence) ?? [];
   const selectedMarket = result?.market ?? (!historical ? markets?.markets.find(m => m.topicId === topic) : undefined);
    const targetAt = forecast?.targetAt ?? selectedMarket?.targetAt;
-  const retrievedAt = forecast?.capturedAt ?? result?.provenance?.capturedAt;
-  const metrics = quoteMetrics(result);
-  const diagnosticGroups = groupDiagnostics(result?.diagnostics ?? []);
-   const validationSummary = diagnosticGroups.size > 0 && <div className="validation-summary"><h3>Quotes inconsistent</h3><details><summary>Technical checks ({result?.diagnostics.length})</summary><ul>{[...diagnosticGroups].map(([code, group]) => <li key={code}><strong>{validationLabels[code] ?? code.replace(/[-_]/g, " ")}</strong><p><code>{code}</code> . {group.count} checks</p><details><summary>Examples</summary><ul className="validation-examples" aria-label={`Examples for ${code}`}>{group.examples.map((example, index) => <li key={index}>{example}</li>)}</ul></details></li>)}</ul></details></div>;
-  return <>
-      {(offline || cachedAt || marketCachedAt) && <div className="notice warning" role="status">{offline ? "Offline" : "Cached data"} . Not live. Alerts paused.</div>}
-      {(markets?.source === "demo" || forecast?.source === "demo") && <div className="notice demo"><strong>DEMO</strong> Synthetic quotes . Alerts off</div>}
-      {historical && <div className="notice warning" role="status">Historical snapshot #{snapshotId} . Not live <button disabled={!result?.market && !topic} onClick={() => { const id = result?.market?.topicId ?? topic; if (id) select(id, true); }}>Latest outlook <ArrowRight size={16} /></button></div>}
+   const selectionControls = (editing = false) => <><div className="forecast-toolbar"><div className="segmented" aria-label="Market cadence">{(["hourly", "daily"] as const).map(c => <button key={c} type="button" disabled={editing} aria-pressed={cadence === c} onClick={() => changeCadence(c)}>{c === "hourly" ? "Hourly" : "Daily"}</button>)}</div><label className="target-select"><CalendarClock size={18} aria-hidden="true" /><select aria-label="Forecast time" disabled={editing || !visibleMarkets.length} value={visibleMarkets.some(m => m.topicId === topic) ? topic ?? "" : ""} onChange={e => select(Number(e.target.value), false, false)}><option value="" disabled>{targetAt && selectedMarket?.cadence === cadence ? compactTime(targetAt) : "Choose a time"}</option>{visibleMarkets.map(m => <option key={m.topicId} value={m.topicId}>{compactTime(m.targetAt)}</option>)}</select></label></div><div className="outlook-meta"><p className="forecast-for">{targetAt ? <>Forecast for <time dateTime={targetAt} aria-label={localTime(targetAt)} title={localTime(targetAt)}>{compactTime(targetAt)}</time></> : "Bitcoin price forecast"}</p><span className={`status ${status === "Live" ? "ready" : ""}`} role="status" aria-label={status}><i aria-hidden="true" /><span className="sr-only">{status}</span></span></div></>;
+   if (mode === "watches") return <Watches result={currentResult} threshold={threshold} operator={operator} historical={historical} offline={offline} selectionControls={selectionControls} targetTimes={Object.fromEntries(markets?.markets.map(m => [m.topicId, m.targetAt]) ?? [])} onSelect={(id, savedThreshold, savedOperator) => { setThreshold(savedThreshold); setOperator(savedOperator); select(id, true, true); }} onOperatorChange={setOperator} onThresholdChange={chooseBoundary} />;
+    return <>
+      {(markets?.source === "demo" || forecast?.source === "demo") && <span className="demo-badge">Demo</span>}
       <section className="outlook" id="outlook">
-        {mode === "watches" && <h1>Watches</h1>}
-        <div className="forecast-toolbar"><div className="segmented" aria-label="Market cadence">{(["hourly", "daily"] as const).map(c => <button key={c} aria-pressed={cadence === c} onClick={() => changeCadence(c)}>{c === "hourly" ? "Hourly" : "Daily"}</button>)}</div><label className="target-select"><CalendarClock size={18} aria-hidden="true" /><select aria-label="Forecast time" ref={targetSelect} disabled={!visibleMarkets.length} value={visibleMarkets.some(m => m.topicId === topic) ? topic ?? "" : ""} onChange={e => select(Number(e.target.value))}><option value="" disabled>{targetAt && selectedMarket?.cadence === cadence ? compactTime(targetAt) : "Choose a time"}</option>{visibleMarkets.map(m => <option key={m.topicId} value={m.topicId}>{compactTime(m.targetAt)}</option>)}</select></label></div>
-        <div className="outlook-meta"><p className="forecast-for">{targetAt ? <>Forecast for <time dateTime={targetAt} aria-label={localTime(targetAt)} title={localTime(targetAt)}>{compactTime(targetAt)}</time></> : "Bitcoin price forecast"}</p><span className={`status ${status === "Live" ? "ready" : ""}`}><i />{status}</span></div>
-        {mode === "outlook" && !historical && <Projection cadence={cadence} now={now} offline={offline} topic={topic} onSelect={select} />}
-        {(error || forecastError) && forecast && <div className="notice warning" role="alert">Connection lost . Last snapshot, not live.<button onClick={() => { void refreshMarkets(); setRetry(value => value + 1); }}><RefreshCw size={16} />Retry</button></div>}
+        <Projection cadence={cadence} now={now} offline={offline} topic={topic} onSelect={select} onHistorical={selectHistorical}
+          cadenceControls={<div className="segmented" aria-label="Market cadence">{(["hourly", "daily"] as const).map(c => <button key={c} aria-pressed={cadence === c} onClick={() => changeCadence(c)}>{c === "hourly" ? "Hourly" : "Daily"}</button>)}</div>}
+          forecastLabel={<div className="outlook-meta"><p className="forecast-for">{targetAt ? <>Forecast for <time dateTime={targetAt} aria-label={localTime(targetAt)} title={localTime(targetAt)}>{compactTime(targetAt)}</time></> : "Bitcoin price forecast"}</p><span className={`status ${status === "Live" ? "ready" : ""}`} role="status" aria-label={offline ? "Offline" : marketCachedAt ? "Cached" : status}><i aria-hidden="true" /><span className="sr-only">{offline ? "Offline" : marketCachedAt ? "Cached" : status}</span></span></div>}
+        />
+        {(error || forecastError) && forecast && <button className="icon-button" title="Retry" aria-label="Retry" onClick={() => { void refreshMarkets(); setRetry(value => value + 1); }}><RefreshCw size={16} /></button>}
         {forecast ? <>
           {mode === "outlook" && <ForecastHeadline forecast={forecast} />}
-          <div className={`forecast-grid ${mode === "watches" ? "watch-selection" : ""}`}>{mode === "outlook" && <div className="distribution"><h2 className="distribution-title">Distribution</h2><div className="range-strip"><span>{coverageLabel(forecast.summary.central80.probability)}</span><strong>{money(forecast.summary.central80.lower)} - {money(forecast.summary.central80.upper)}</strong></div>{Number.isFinite(threshold) && <Histogram key={forecast.topicId} buckets={forecast.buckets} centralRange={forecast.summary.central80} operator={operator} threshold={threshold} onBoundary={chooseBoundary} />}</div>}
-          <aside className="threshold-panel"><div className="probability" aria-live="polite"><div><span className="chance-label">Chance {operator} {Number.isFinite(threshold) ? money(threshold) : "unsupported boundary"}</span><small>Market-implied</small></div><strong>{probability === null ? "Unavailable" : percent(probability)}</strong>{mode === "outlook" && boundary !== null && <a href={selectionHref("/watches", typeof location === "undefined" ? "" : location.search, { threshold: boundary, operator })} title="Watch this boundary" aria-label="Watch this boundary"><ArrowRight size={22} /></a>}</div>{boundary === null && <p className="notice warning" role="alert">This boundary is not offered for this target. Select an offered price to see its chance.</p>}<div className="odds-controls"><div className="segmented" aria-label="Chance direction">{(["above", "below"] as const).map(o => <button key={o} aria-label={`Chance ${o}`} aria-pressed={operator === o} onClick={() => setOperator(o)}>{o === "above" ? "Above" : "Below"}</button>)}</div><select aria-label="Chance price" value={boundary ?? String(threshold)} onChange={e => chooseBoundary(Number(e.target.value))}>{boundary === null && <option value={String(threshold)} disabled>{Number.isFinite(threshold) ? money(threshold) : "Unsupported boundary"}</option>}{boundaries.map(b => <option key={b} value={b}>{money(b)}</option>)}</select></div></aside></div>
-          <div className="freshness"><RefreshCw size={13} aria-hidden="true" /><span>{historical ? "Captured" : cached ? "Cached snapshot" : "Updated"} <time dateTime={forecast.capturedAt}>{compactTime(forecast.capturedAt)}</time></span></div>
-        </> : <div className="forecast-empty" aria-busy={loading}><Cloud size={64} strokeWidth={1} aria-hidden="true" /><h1>{loading ? "Checking the forecast" : "Forecast unavailable"}</h1><p role="status">{loading ? "Getting market quotes..." : error || forecastError ? "Couldn't reach market quotes." : !visibleMarkets.length && !selectedMarket ? "No times available right now." : "Market quotes need a check."}</p>{!loading && (error || forecastError ? <button className="primary" onClick={() => { void refreshMarkets(); setRetry(value => value + 1); }}><RefreshCw size={16} />Retry</button> : cadence === "hourly" && markets?.markets.some(m => m.cadence === "daily") ? <button className="primary" onClick={() => changeCadence("daily")}>Try daily <ArrowRight size={16} /></button> : visibleMarkets.length > 0 ? <button className="primary" onClick={() => { targetSelect.current?.focus(); targetSelect.current?.showPicker?.(); }}><CalendarClock size={16} />Choose another time</button> : <button className="primary" onClick={() => void refreshMarkets()}><RefreshCw size={16} />Refresh times</button>)}{!loading && (error || forecastError) && cadence === "hourly" && markets?.markets.some(m => m.cadence === "daily") && <button onClick={() => changeCadence("daily")}>Try daily <ArrowRight size={16} /></button>}</div>}
-        <div className="method"><Sheet title="Forecast details" trigger={<><Info size={18} />Details</>}><div className="source-details">
-          <p>{status} . Observed {retrievedAt ? <time dateTime={retrievedAt}>{utcTime(retrievedAt)}</time> : "time unavailable"}</p>
-          <p>24h volume {sats(metrics.volume24hMillisats)} . Total volume {sats(metrics.totalVolumeMillisats)} . Locked liquidity {sats(metrics.liquidityMillisats)}. Observed quote fields: volume_24h_millisats, total_volume_millisats, liquidity_locked_millisats; millisats divided by 1,000, not USD. Missing fields are unavailable.</p>
-          {forecast && distributionRanges(forecast.buckets) && <p>Median range: {distributionRanges(forecast.buckets)!.median.label}. Original source bracket; its midpoint is only a representative chart guide. {distributionRanges(forecast.buckets)!.bands.map(b => `Central ${b.nominal * 100}%: ${money(b.lower)} - ${money(b.upper)}, actual included quote share ${percent(b.probability)}.`).join(" ")}</p>}
-          <p>Forecast for {targetAt ? <time dateTime={targetAt}>{localTime(targetAt)}</time> : "no time selected"}</p>
-          <p>Market-implied chances use normalized YES quote shares, not calibrated probabilities. Above includes whole ranges starting at the chosen price; below includes whole ranges ending there. No within-range interpolation is used.</p>
-          <details><summary>Exact time / UTC</summary>{targetAt && <p>Target <time dateTime={targetAt}>{utcTime(targetAt)}</time></p>}{retrievedAt && <p>Retrieved <time dateTime={retrievedAt}>{utcTime(retrievedAt)}</time></p>}<p>Retrieval time is not last-trade time.</p>{cachedAt && <p>Forecast cached {localTime(cachedAt)}</p>}{marketCachedAt && <p>Market list cached {localTime(marketCachedAt)}</p>}</details>
-          <div className="source-links"><span>Source {forecast?.source === "demo" || selectedMarket?.source === "demo" ? "Demo (synthetic)" : selectedMarket || forecast ? "Glimpse" : "unavailable"}</span>{selectedMarket?.source === "live" && <a href={`https://www.glimpse.markets/markets/${encodeURIComponent(selectedMarket.batchId)}/${selectedMarket.topicId}`} target="_blank" rel="noreferrer">Market <ExternalLink size={14} /></a>}<a href="https://docs.glimpse.markets/api-reference/nmarket/market-quotes" target="_blank" rel="noreferrer">Quotes <ExternalLink size={14} /></a></div>
-          {validationSummary}
-          {(error || forecastError) && <details><summary>Connection details</summary><p>{error || forecastError}</p></details>}
-          {forecast && <details><summary>Method & evidence . #{forecast.snapshotId}</summary><p>{forecast.caveat}</p><p>Most likely range has {percent(forecast.summary.modalBucket.probability)} of quote share. Chart bar heights show each range's original normalized share, including in the focused view.</p><p>Quote scale: raw total YES quotes = {forecast.originalYesSum}. Source quote scale is not assumed to be a calibrated probability denominator; NO quotes are retained, not used for likelihood.</p><p>Normalized shares: YES quote / total YES quotes = (raw YES / 100) * (100 / total YES quotes). Normalization factor: {forecast.normalizationFactor}. {forecast.normalized ? "Adjusted" : "Unadjusted"} . {forecast.transformationVersion}</p><p>Central range includes {percent(forecast.summary.central80.probability)} of quote share, rounded outward to whole bins. Quotes are not calibrated probabilities. Settlement source and exact equality treatment are not verified.</p><p>{age === null ? "" : `${age}s since retrieval . `}Server status: {result?.status}</p></details>}
-          {historical && <p>Captured alert evidence, not the latest outlook. A current watch baseline does not establish a historical change.</p>}
-        </div></Sheet></div>
+          <div className="forecast-grid">{mode === "outlook" && <div className="distribution"><h2 className="distribution-title">Distribution</h2><div className="range-strip"><span>{coverageLabel(forecast.summary.central80.probability)}</span><strong>{money(forecast.summary.central80.lower)} - {money(forecast.summary.central80.upper)}</strong></div>{Number.isFinite(threshold) && <Histogram key={forecast.topicId} buckets={forecast.buckets} centralRange={forecast.summary.central80} operator={operator} threshold={threshold} onBoundary={chooseBoundary} />}</div>}
+          <aside className="threshold-panel"><div className="probability" aria-live="polite"><div><span className="chance-label">Chance {operator} {Number.isFinite(threshold) ? money(threshold) : "Unavailable"}</span></div><strong>{probability === null ? "Unavailable" : percent(probability)}</strong>{mode === "outlook" && boundary !== null && <a href={selectionHref("/watches", typeof location === "undefined" ? "" : location.search, { threshold: boundary, operator })} title="Watch this boundary" aria-label="Watch this boundary"><ArrowRight size={22} /></a>}</div><div className="odds-controls"><div className="segmented" aria-label="Chance direction">{(["above", "below"] as const).map(o => <button key={o} aria-label={`Chance ${o}`} aria-pressed={operator === o} onClick={() => setOperator(o)}>{o === "above" ? "Above" : "Below"}</button>)}</div><select aria-label="Chance price" value={boundary ?? String(threshold)} onChange={e => chooseBoundary(Number(e.target.value))}>{boundary === null && <option value={String(threshold)} disabled>{Number.isFinite(threshold) ? money(threshold) : "Unavailable"}</option>}{boundaries.map(b => <option key={b} value={b}>{money(b)}</option>)}</select></div></aside></div>
+          <div className="sr-only">Updated <time dateTime={forecast.capturedAt}>{compactTime(forecast.capturedAt)}</time></div>
+        </> : <div className="forecast-empty" aria-busy={loading}><Cloud size={64} strokeWidth={1} aria-hidden="true" /><h1 role="status">{loading ? "Loading..." : "Unavailable"}</h1>{!loading && <button className="primary" onClick={() => { void refreshMarkets(); setRetry(value => value + 1); }}><RefreshCw size={16} />Retry</button>}</div>}
       </section>
-      {mode === "watches" && <Watches result={currentResult} threshold={threshold} operator={operator} historical={historical} offline={offline} onSelect={select} />}
   </>;
 }

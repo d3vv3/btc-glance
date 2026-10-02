@@ -1,5 +1,5 @@
 [Unit]
-Description=Bitcoin Weather collector and push worker
+Description=BTC glance collector and push worker
 After=network.target
 
 [Service]

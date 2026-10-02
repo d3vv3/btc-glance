@@ -68,6 +68,6 @@ export function Histogram({ buckets, centralRange, threshold, operator, onBounda
       <text x="60" y="272" className="axis">{money(visible[0]?.lower ?? 0)}</text><text x="680" y="272" textAnchor="end" className="axis">{money(visible.at(-1)?.upper ?? 0)}</text>
     </svg></div>
     <div className="price-direction"><span>Lower price</span><span>Higher price</span></div>
-    <p className="bin-detail" aria-live="polite">{selected ? `${money(selected.lower)} - ${money(selected.upper)} . ${percent(selected.probability)} market-implied` : ""}</p>
+    <p className="bin-detail" aria-live="polite">{selected ? `${money(selected.lower)} - ${money(selected.upper)} . ${percent(selected.probability)}` : ""}</p>
   </div>;
 }

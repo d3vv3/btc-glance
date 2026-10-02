@@ -29,7 +29,7 @@ describe("foreground reconciliation", () => {
   let cleanup: (() => void)[];
   const settle = async () => { await vi.advanceTimersByTimeAsync(0); };
   const mount = () => {
-    Watches({ result: null, threshold: 0, operator: "above", offline: false, onSelect: () => {} });
+    Watches({ result: null, threshold: 0, operator: "above", offline: false, onSelect: () => {}, onOperatorChange: () => {}, onThresholdChange: () => {} });
     cleanup = harness.effects.map(effect => effect()).filter((value): value is () => void => typeof value === "function");
     harness.mounting = false;
   };

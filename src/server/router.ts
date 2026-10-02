@@ -89,7 +89,7 @@ export const appRouter = t.router({
       if (!pushConfig().enabled) throw new TRPCError({ code: "PRECONDITION_FAILED" });
       ctx.db.transaction(() => {
         if (!ctx.db.prepare("SELECT endpoint FROM subscriptions WHERE owner=?").get(ctx.owner)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Register a subscription first" });
-        queueMessage(ctx.db, ctx.owner, { title: "Bitcoin Weather", body: "Test notification", url: "/", tag: `test-${randomUUID()}` }, Date.now());
+        queueMessage(ctx.db, ctx.owner, { title: "BTC glance", body: "Test notification", url: "/", tag: `test-${randomUUID()}` }, Date.now());
       }).immediate(); return ok();
     }),
   }),

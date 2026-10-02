@@ -50,6 +50,18 @@ function worker({ html = '<script src="/_next/static/app.js"></script><link href
 }
 
 describe("service worker shell installation", () => {
+  it("caches bounded public pastCount queries but never private or malformed variants", async () => {
+    const sw = worker();
+    for (const search of ["?cadence=daily&pastCount=0", "?cadence=hourly&pastCount=7&limit=32"]) {
+      const response = await sw.dispatch("fetch", { request: new Request(`${origin}/api/forecasts/timeline${search}`) });
+      expect(response).toBeInstanceOf(Response);
+      expect(sw.dataCache.entries.has(`${origin}/api/forecasts/timeline${search}`)).toBe(true);
+    }
+    for (const search of ["?pastCount=8", "?pastCount=03", "?pastCount=3&owner=secret", "?pastCount=3&pastCount=7"]) {
+      expect(sw.dispatch("fetch", { request: new Request(`${origin}/api/forecasts/timeline${search}`) })).toBeUndefined();
+      expect(sw.dataCache.entries.has(`${origin}/api/forecasts/timeline${search}`)).toBe(false);
+    }
+  });
   it("requires the discovered JS and CSS before installation succeeds", async () => {
     const sw = worker();
     await sw.dispatch("install");
@@ -83,6 +95,19 @@ describe("service worker shell installation", () => {
 });
 
 describe("notification deep links", () => {
+  it("defaults to BTC glance while retaining the body, icon and notification tag identity", async () => {
+    const sw = worker();
+    await sw.dispatch("push", { data: { json: () => ({ body: "Market quote share: 20.0% to 30.0%." }) } });
+    expect(sw.registration.showNotification).toHaveBeenCalledWith("BTC glance", expect.objectContaining({
+      body: "Market quote share: 20.0% to 30.0%.",
+      icon: "/icons/icon-192.png?v=sun-orb-3", tag: "bitcoin-weather",
+    }));
+  });
+  it("preserves an explicit notification payload title and body", async () => {
+    const sw = worker();
+    await sw.dispatch("push", { data: { json: () => ({ title: "Market update", body: "Unchanged payload", tag: "watch-123-17" }) } });
+    expect(sw.registration.showNotification).toHaveBeenCalledWith("Market update", expect.objectContaining({ body: "Unchanged payload", tag: "watch-123-17" }));
+  });
   it("does not duplicate a window when focus fails after navigation", async () => {
     const sw = worker();
     const focus = vi.fn(async () => { throw new Error("Focus refused"); });

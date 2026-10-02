@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { centralInterval, convertQuotes, summarize } from "../src/lib/forecast";
-import { bracketDirection, compactPriceRange, dailySlots, distributionRanges, horizonTargets, marketOutlook, millisatsToSats, modalMidpoint, pricePosition, projectionModel, quoteMetrics } from "../src/lib/projection";
-import type { ForecastResult, TimelineResult } from "../src/lib/types";
+import { bracketDirection, compactPriceRange, dailySlots, hourlySlots, distributionRanges, distributionSentiment, sentimentReference, heatmapOpacity, horizonTargets, marketOutlook, midpointDirection, millisatsToSats, modalMidpoint, nextHeatmapCell, pricePosition, projectionModel, quoteMetrics, quoteShareLabel } from "../src/lib/projection";
+import type { ForecastResult, TimelineResult, TimelineTarget } from "../src/lib/types";
 import { market, now, quote } from "./fixtures";
 
 const buckets = convertQuotes(quote(), 3).buckets;
@@ -9,8 +9,53 @@ function target(i: number, overrides: Partial<ForecastResult> = {}): ForecastRes
   const targetAt = new Date(now + (i + 1) * 3600000).toISOString();
   return { market: { ...market, topicId: i + 1, targetAt }, status: "ready", diagnostics: [], freshUntil: new Date(now + 300000).toISOString(), forecast: { snapshotId: i + 1, topicId: i + 1, targetAt, capturedAt: new Date(now).toISOString(), source: "live", buckets, summary: summarize(buckets), transformationVersion: "quote-share-v1", originalYesSum: 100, normalizationFactor: 1, normalized: false, interpretation: "quote-share-not-calibrated", caveat: "" }, ...overrides };
 }
-const data = (targets: ForecastResult[]): TimelineResult => ({ cadence: "hourly", asOf: new Date(now).toISOString(), collectedAt: new Date(now).toISOString(), source: "live", targets });
+const data = (targets: TimelineTarget[]): TimelineResult => ({ cadence: "hourly", asOf: new Date(now).toISOString(), collectedAt: new Date(now).toISOString(), source: "live", targets });
 describe("whole-bin projection", () => {
+  it.each(["hourly", "daily"] as const)("joins eligible %s archived and future bands without merging line phases or bypassing gaps", cadence => {
+    const step = cadence === "daily" ? 86400000 : 3600000;
+    const historical = target(0) as TimelineTarget;
+    const targetAt = new Date(now).toISOString();
+    historical.kind = "past"; historical.targetAt = targetAt;
+    historical.market = { ...historical.market!, cadence, targetAt };
+    historical.forecast = { ...historical.forecast!, targetAt, capturedAt: new Date(now - step - 1000).toISOString() };
+    historical.archive = { snapshotId: historical.forecast.snapshotId, leadSeconds: step / 1000, maxSnapshotAgeSeconds: 300, cutoff: new Date(now - step).toISOString() };
+    const future = [1, 2].map(i => {
+      const result = target(i);
+      const at = new Date(now + i * step).toISOString();
+      return { ...result, market: { ...result.market!, cadence, targetAt: at }, forecast: { ...result.forecast!, targetAt: at } };
+    });
+    const timeline = { ...data([historical, ...future]), cadence };
+    const model = projectionModel(timeline, now, false, "range");
+    expect(model.bandSegments).toEqual([[0, 1, 2]]);
+    expect(model.segments).toEqual([[0], [1, 2]]);
+    expect(model.columns[0].observed).toBeNull();
+    expect(projectionModel({ ...timeline, targets: [historical, future[1]] }, now, false, "range").bandSegments).toEqual([[0], [1]]);
+    expect(projectionModel({ ...timeline, targets: [{ ...historical, forecast: null }, ...future] }, now, false, "range").bandSegments).toEqual([[1, 2]]);
+    expect(projectionModel(timeline, now, true, "range").bandSegments).toEqual([[0]]);
+    for (const status of ["stale", "invalid", "expired", "unavailable"] as const) {
+      expect(projectionModel({ ...timeline, targets: [historical, { ...future[0], status }, future[1]] }, now, false, "range").bandSegments).toEqual([[0], [2]]);
+    }
+    const expired = { ...future[0], freshUntil: new Date(now - 1).toISOString() };
+    expect(projectionModel({ ...timeline, targets: [historical, expired, future[1]] }, now, false, "range").bandSegments).toEqual([[0], [2]]);
+    const wrongSource = { ...future[0], forecast: { ...future[0].forecast, source: "demo" as const } };
+    expect(projectionModel({ ...timeline, targets: [historical, wrongSource, future[1]] }, now, false, "range").bandSegments).toEqual([[0], [2]]);
+  });
+  it("keeps hourly gaps as calendar slots without manufacturing forecast IDs", () => {
+    const model = projectionModel(data([target(0), target(2)]), now, false, "range");
+    const slots = hourlySlots(model.columns, now, 3);
+    expect(slots.map(s => s.column?.topicId ?? null)).toEqual([1, null, 3]);
+    expect(slots.map(s => s.date)).toEqual([1, 2, 3].map(hour => new Date(now + hour * 3600000).toISOString()));
+    expect(hourlySlots([], now, 7).every(s => s.column === null)).toBe(true);
+  });
+  it("preserves actual non-top-of-hour settlements and any irregular target without interpolation", () => {
+    const model = projectionModel(data([target(0), target(2)]), now, false, "range");
+    const shifted = model.columns.map(c => ({ ...c, targetAt: new Date(Date.parse(c.targetAt) - 1800000).toISOString() }));
+    const slots = hourlySlots(shifted, now, 3);
+    expect(slots.map(s => s.column?.topicId ?? null)).toEqual([1, null, 3]);
+    expect(slots[0].date).toBe(new Date(now + 1800000).toISOString());
+    const irregular = { ...shifted[1], topicId: 4, targetAt: new Date(now + 2 * 3600000).toISOString() };
+    expect(hourlySlots([...shifted, irregular], now, 3).map(s => s.column?.topicId ?? null)).toEqual([1, null, 4, 3]);
+  });
   it.each([.5, .8, .9])("advances exact lower CDF ties but includes upper ties for central %s", nominal => {
     const tail = (1 - nominal) / 2;
     for (const perturbation of [0, -1e-14, 1e-14]) {
@@ -130,23 +175,26 @@ describe("whole-bin projection", () => {
     wide.forecast = { ...wide.forecast!, buckets: many, summary: summarize(many) };
     const model = projectionModel(data([wide]), now);
     expect(model.rows.length).toBeLessThanOrEqual(40); expect(model.columns[0].masses.reduce((a, b) => a + b, 0) + model.columns[0].omittedMass!).toBeCloseTo(1);
-    expect(model.rows.every(row => pricePosition(row.lower, model.lower, model.upper, 28, 270) - pricePosition(row.upper, model.lower, model.upper, 28, 270) >= 6)).toBe(true);
+    expect(model.rows).toHaveLength(32);
+    expect(model.rows.slice(0, -1).every(row => row.upper - row.lower === 3000)).toBe(true);
+    expect(model.rows.at(-1)!.upper - model.rows.at(-1)!.lower).toBe(1000);
+    expect(model.unequalFinalRow).toBe(true);
     expect(model.columns[0].midpoint).toBe(500); expect(wide.forecast.summary.modalBucket.label).toBe("0-1000");
   });
 });
 
 describe("market outlook and focused heatmap", () => {
   const narrow = (lower: number, upper = lower + 200) => distributionRanges([{ ...buckets[0], lower, upper, probability: 1 }])!;
-  it("classifies original median brackets, with windy width precedence and a neutral reference", () => {
+  it("classifies representative midpoint changes even in overlapping brackets, with windy width precedence", () => {
     const reference = narrow(84000);
-    expect(marketOutlook(reference, reference, true)).toBe("steady");
+    expect(marketOutlook(reference, reference)).toBe("steady");
     expect(marketOutlook(narrow(84200), reference)).toBe("sunny");
     expect(marketOutlook(narrow(83800), reference)).toBe("rainy");
     expect(marketOutlook(narrow(80000), reference)).toBe("snowy");
-    expect(marketOutlook(narrow(84100), reference)).toBe("steady");
+    expect(marketOutlook(narrow(84100), reference)).toBe("sunny");
     expect(marketOutlook(narrow(90000, 100000), reference)).toBe("windy");
     expect(marketOutlook(narrow(70000, 80000), reference)).toBe("windy");
-    expect(marketOutlook(narrow(70000, 80000), reference, true)).toBe("steady");
+    expect(marketOutlook(narrow(70000, 80000), null)).toBe("unavailable");
     expect(marketOutlook(null, reference)).toBe("unavailable");
     expect(marketOutlook(reference, null)).toBe("unavailable");
     expect(marketOutlook(narrow(92000, 100000), reference)).toBe("windy");
@@ -160,15 +208,15 @@ describe("market outlook and focused heatmap", () => {
     expect(compactPriceRange({ lower: 84200, upper: 84400 })).toBe("$84.2k-$84.4k");
     expect(distributionRanges([{ ...buckets[0], lower: -200, upper: -100, probability: 1 }])).toBeNull();
   });
-  it("focuses on whole-bin central90 union plus two bins and accounts for exact excluded shares", () => {
+  it("focuses on selected whole-bin central90 plus two bins, not the horizon envelope", () => {
     const targets = [target(0), target(1)];
     targets.forEach((result, j) => {
       const bins = Array.from({ length: 100 }, (_, i) => ({ ...buckets[0], lower: 25000 + i * 1000, upper: 26000 + i * 1000, probability: i === 59 + j ? .92 : i === 0 || i === 99 ? .04 : 0 }));
       result.forecast = { ...result.forecast!, buckets: bins, summary: summarize(bins) };
     });
     const model = projectionModel(data(targets), now);
-    expect([model.lower, model.upper]).toEqual([82000, 88000]);
-    expect(model.rows).toHaveLength(6);
+    expect([model.lower, model.upper]).toEqual([82000, 87000]);
+    expect(model.rows).toHaveLength(5);
     for (const column of model.columns) {
       expect(column.masses.reduce((a, b) => a + b, 0)).toBeCloseTo(.92);
       expect(column.omittedMass).toBeCloseTo(.08);
@@ -177,9 +225,65 @@ describe("market outlook and focused heatmap", () => {
     const range = projectionModel(data(targets), now, false, "range");
     expect([range.lower, range.upper]).toEqual([84000, 86000]);
     expect(range.columns.every(c => c.omittedMass === null)).toBe(true);
+    const selected = projectionModel(data(targets), now, false, "heatmap", 2);
+    expect([selected.lower, selected.upper]).toEqual([83000, 88000]);
+    expect(selected.focus?.topicId).toBe(2);
+    expect(selected.reference).toEqual(model.reference);
     const invalid = target(2); invalid.forecast!.buckets = [{ ...buckets[0], probability: -1 }];
     expect(projectionModel(data([invalid]), now).reference).toBeNull();
     expect(projectionModel(data([invalid]), now).columns[0].omittedMass).toBeNull();
+  });
+  it("clips other high-focus targets and accounts for their entire omitted mass without renormalizing", () => {
+    const targets = [target(0), target(1)];
+    targets.forEach((result, j) => {
+      const bins = Array.from({ length: 500 }, (_, i) => ({ ...buckets[0], lower: 25000 + i * 200, upper: 25200 + i * 200, probability: i === (j ? 420 : 297) ? .92 : i === 0 || i === 499 ? .04 : 0 }));
+      result.forecast = { ...result.forecast!, buckets: bins, summary: summarize(bins) };
+    });
+    const model = projectionModel(data(targets), now, false, "heatmap", 1);
+    expect([model.lower, model.upper]).toEqual([84000, 85000]);
+    expect(model.columns[0].masses.reduce((a, b) => a + b, 0)).toBeCloseTo(.92);
+    expect(model.columns[1].masses.every(m => m === 0)).toBe(true);
+    expect(model.columns[1].omittedMass).toBeCloseTo(1);
+    expect(model.peakMass).toBe(.92);
+    const high = projectionModel(data(targets), now, false, "heatmap", 2);
+    expect([high.lower, high.upper]).toEqual([108600, 109600]);
+    expect(high.columns[0].omittedMass).toBeCloseTo(1);
+    expect(high.reference).toEqual(model.reference);
+    targets[1].status = "stale";
+    const fallback = projectionModel(data(targets), now, false, "heatmap", 2);
+    expect(fallback.focus).toMatchObject({ topicId: 1, fallback: true });
+    expect(fallback.columns[1].omittedMass).toBeNull();
+    expect(projectionModel(data(targets), now, true, "heatmap", 2).focus).toBeNull();
+    expect(projectionModel(data(targets), now, false, "heatmap", 999).focus).toMatchObject({ topicId: 1, fallback: true });
+  });
+  it("keeps 24-40 whole-bin rows when support allows and uniform groups except the disclosed final row", () => {
+    for (const count of [24, 41, 47, 81, 100, 500]) {
+      const result = target(0);
+      const bins = Array.from({ length: count }, (_, i) => ({ ...buckets[0], lower: i / 10, upper: (i + 1) / 10, probability: 1 / count }));
+      result.forecast = { ...result.forecast!, buckets: bins, summary: summarize(bins) };
+      const model = projectionModel(data([result]), now);
+      expect(model.rows.length).toBeGreaterThanOrEqual(24);
+      expect(model.rows.length).toBeLessThanOrEqual(40);
+      for (const row of model.rows.slice(0, -1)) expect(row.upper - row.lower).toBeCloseTo(model.rows[0].upper - model.rows[0].lower);
+      expect(model.columns[0].masses.reduce((a, b) => a + b, 0) + model.columns[0].omittedMass!).toBeCloseTo(1);
+    }
+  });
+  it("uses one global visible intensity and never rounds nonzero low shares to zero", () => {
+    expect(heatmapOpacity(0, .5)).toBe(0);
+    expect(heatmapOpacity(.5, .5)).toBe(1);
+    expect(heatmapOpacity(.125, .5)).toBe(.5);
+    expect(heatmapOpacity(.125, 0)).toBe(0);
+    expect(quoteShareLabel(.00001)).toBe("<0.1%");
+    expect(quoteShareLabel(.001)).toBe("0.1%");
+    expect(quoteShareLabel(0)).toBe("0.0%");
+  });
+  it("navigates nonzero bands and skips unavailable columns without synthetic tab stops", () => {
+    const model = projectionModel(data([target(0), target(1, { status: "stale" }), target(2)]), now);
+    model.columns[0].masses = [.4, 0, .6]; model.columns[2].masses = [0, 1, 0];
+    expect(nextHeatmapCell(model.columns, model.rows, { column: 0, row: 0 }, "ArrowUp")).toEqual({ column: 0, row: 2 });
+    expect(nextHeatmapCell(model.columns, model.rows, { column: 0, row: 0 }, "ArrowRight")).toEqual({ column: 2, row: 1 });
+    expect(nextHeatmapCell(model.columns, model.rows, { column: 2, row: 1 }, "ArrowLeft")).toEqual({ column: 0, row: 0 });
+    expect(nextHeatmapCell(model.columns, model.rows, { column: 0, row: 0 }, "ArrowDown")).toEqual({ column: 0, row: 0 });
   });
   it("clamps context to original support and never fabricates rows beyond it", () => {
     const result = target(0);
@@ -193,7 +297,111 @@ describe("market outlook and focused heatmap", () => {
   it("selects the earliest valid reference after stale gaps without connecting them", () => {
     const model = projectionModel(data([target(3), target(0, { status: "stale" }), target(1)]), now);
     expect(model.reference?.targetAt).toBe(target(1).market!.targetAt);
-    expect(model.columns.map(c => c.outlook)).toEqual(["unavailable", "steady", "windy"]);
+    expect(model.columns.map(c => c.outlook)).toEqual(["unavailable", "unavailable", "unavailable"]);
     expect(model.segments).toEqual([[1], [2]]);
+  });
+  it("compares only consecutive fresh forecasts, independently of the fixed heatmap reference", () => {
+    const targets = [target(0), target(1), target(2)];
+    targets.forEach((result, i) => {
+      const midpoint = [86000, 85500, 86100][i];
+      const bins = [{ ...buckets[0], lower: midpoint - 50, upper: midpoint + 50, probability: 1 }];
+      result.forecast = { ...result.forecast!, buckets: bins, summary: summarize(bins) };
+    });
+    for (const mode of ["range", "heatmap"] as const) {
+      const model = projectionModel(data(targets), now, false, mode);
+      expect(model.columns.map(c => c.direction)).toEqual(["unavailable", "lower", "higher"]);
+      expect(model.columns.map(c => c.outlook)).toEqual(["unavailable", "unavailable", "unavailable"]);
+      expect(model.reference?.ranges.midpoint).toBe(86000);
+      for (const status of ["stale", "invalid", "expired", "unavailable"] as const) {
+        expect(projectionModel(data([targets[0], { ...targets[1], status }, targets[2]]), now, false, mode).columns[2].direction).toBe("unavailable");
+      }
+      expect(projectionModel(data([targets[0], targets[2]]), now, false, mode).columns[1].direction).toBe("unavailable");
+    }
+  });
+  it("shares absolute epsilon ties and keeps windy direction independent", () => {
+    expect(midpointDirection(100 + 5e-9, 100)).toBe("neutral");
+    expect(midpointDirection(100 - 5e-9, 100)).toBe("neutral");
+    expect(midpointDirection(100 + 2e-8, 100)).toBe("higher");
+    expect(midpointDirection(100 - 2e-8, 100)).toBe("lower");
+    expect(midpointDirection(null, 100)).toBe("unavailable");
+    const wide = narrow(90000, 100000);
+    expect(marketOutlook(wide, narrow(84000))).toBe("windy");
+    expect(midpointDirection(wide.midpoint, narrow(84000).midpoint)).toBe("higher");
+  });
+  it("uses modal direction in Heatmap and median direction in Range when they diverge", () => {
+    const targets = [target(0), target(1)];
+    targets.forEach((result, j) => {
+      const bins = Array.from({ length: 5 }, (_, i) => ({ ...buckets[0], lower: 84000 + i * 200, upper: 84200 + i * 200, probability: (j ? [.4, 0, 0, .35, .25] : [0, .25, .4, .35, 0])[i] }));
+      result.forecast = { ...result.forecast!, buckets: bins, summary: summarize(bins) };
+    });
+    expect(projectionModel(data(targets), now, false, "range").columns[1]).toMatchObject({ direction: "higher", outlook: "unavailable" });
+    expect(projectionModel(data(targets), now, false, "heatmap").columns[1]).toMatchObject({ direction: "lower", outlook: "unavailable" });
+  });
+});
+
+describe("observed-reference whole-bin sentiment", () => {
+  const reference = { value: 1500, time: new Date(now).toISOString() };
+  const bins = (weights: number[]) => buckets.map((b, i) => ({ ...b, probability: weights[i] }));
+  const past = (at = now, value = 1500): TimelineTarget => ({ kind: "past", targetAt: new Date(at).toISOString(), market: null, forecast: null, status: "unavailable", diagnostics: [], observed: { source: "Kraken", pair: "XBTUSD", cadence: "hourly", interval: 60, value, candleStart: new Date(at - 3600000).toISOString(), candleEnd: new Date(at).toISOString(), fetchedAt: new Date(now).toISOString() } });
+  it("uses the exact 60% threshold and epsilon on both sides", () => {
+    expect(distributionSentiment(bins([.2, .2, .6]), reference)).toMatchObject({ label: "Bullish", up: .6, down: .2, undecided: .2, reference });
+    expect(distributionSentiment(bins([.6, .2, .2]), reference).label).toBe("Bearish");
+    expect(distributionSentiment(bins([.2, .2000000005, .5999999995]), reference).label).toBe("Bullish");
+    expect(distributionSentiment(bins([.5999999995, .2000000005, .2]), reference).label).toBe("Bearish");
+    expect(distributionSentiment(bins([.2, .200000002, .599999998]), reference).label).toBe("Mixed");
+    expect(distributionSentiment(bins([.599999998, .200000002, .2]), reference).label).toBe("Mixed");
+    expect(distributionSentiment(bins([0, 1, 0]), reference)).toMatchObject({ label: "Mixed", up: 0, down: 0, undecided: 1 });
+    const normalized = distributionSentiment(bins([.2, .2, .600000001]), reference);
+    expect(normalized.up! + normalized.down! + normalized.undecided!).toBeCloseTo(1, 14);
+  });
+  it("keeps both bins touching an exact boundary undecided", () => {
+    expect(distributionSentiment(bins([.6, .4, 0]), { ...reference, value: 1000 })).toMatchObject({ label: "Mixed", up: 0, down: 0, undecided: 1 });
+    expect(distributionSentiment(bins([0, .4, .6]), { ...reference, value: 2000 })).toMatchObject({ label: "Mixed", up: 0, down: 0, undecided: 1 });
+    expect(distributionSentiment(bins([.6, 0, .4]), { ...reference, value: 2000 })).toMatchObject({ label: "Bearish", down: .6, undecided: .4 });
+  });
+  it("does not call missing/invalid references or invalid/zero distributions Mixed", () => {
+    for (const value of [0, -1, NaN, Infinity]) expect(distributionSentiment(buckets, { ...reference, value }).label).toBeNull();
+    expect(distributionSentiment(buckets, null).label).toBeNull();
+    expect(distributionSentiment(buckets, { ...reference, time: "invalid" }).label).toBeNull();
+    for (const weights of [[0, 0, 0], [-.1, .5, .6], [NaN, .4, .6], [.1, .1, .1]]) expect(distributionSentiment(bins(weights), reference).label).toBeNull();
+    expect(distributionSentiment([], reference).label).toBeNull();
+  });
+  it.each(["hourly", "daily"] as const)("selects the latest completed %s observation without requiring an archive", cadence => {
+    const duration = cadence === "daily" ? 86400000 : 3600000;
+    const observations = [past(now - duration, 1400), past(now, 1500)];
+    observations.forEach(r => { r.observed = { ...r.observed!, cadence, interval: cadence === "daily" ? 1440 : 60, candleStart: new Date(Date.parse(r.targetAt!) - duration).toISOString() }; });
+    const timeline = { ...data(observations.reverse()), cadence };
+    expect(sentimentReference(timeline, now)).toEqual(reference);
+    expect(sentimentReference(timeline, null)).toBeNull();
+    expect(sentimentReference({ ...timeline, asOf: "invalid" }, now)).toBeNull();
+  });
+  it("rejects wrong source, pair, cadence, duration, target, invalid prices and future fetch/candle times", () => {
+    const valid = past();
+    for (const override of [{ source: "Other" }, { pair: "XBTEUR" }, { cadence: "daily" }, { interval: 1440 }, { value: 0 }, { value: -1 }, { value: NaN }, { value: Infinity }, { fetchedAt: new Date(now + 1).toISOString() }, { fetchedAt: new Date(now - 1).toISOString() }, { candleStart: new Date(now - 1).toISOString() }, { candleEnd: new Date(now + 3600000).toISOString() }]) {
+      const bad = { ...valid, observed: { ...valid.observed!, ...override } } as TimelineTarget;
+      expect(sentimentReference(data([bad]), now)).toBeNull();
+    }
+    expect(sentimentReference(data([{ ...valid, kind: "future" }]), now)).toBeNull();
+    expect(sentimentReference(data([{ ...valid, targetAt: new Date(now - 3600000).toISOString() }]), now)).toBeNull();
+    expect(sentimentReference({ ...data([valid]), asOf: new Date(now - 1).toISOString() }, now)).toBeNull();
+    expect(sentimentReference(data([past(now + 3600000)]), now)).toBeNull();
+  });
+  it("keeps full-distribution sentiment across clipped views and unavailable future forecasts", () => {
+    const results = [target(0), target(1)];
+    results.forEach((r, j) => {
+      const bs = Array.from({ length: 100 }, (_, i) => ({ ...buckets[0], lower: i * 100, upper: (i + 1) * 100, probability: i === (j ? 80 : 40) ? .92 : i === 0 || i === 99 ? .04 : 0 }));
+      r.forecast = { ...r.forecast!, buckets: bs, summary: summarize(bs) };
+    });
+    const timeline = data([past(), ...results]);
+    const range = projectionModel(timeline, now, false, "range");
+    const heatmap = projectionModel(timeline, now, false, "heatmap", 1);
+    expect(heatmap.columns[2].omittedMass).toBeCloseTo(1);
+    expect(heatmap.columns.map(c => c.sentiment)).toEqual(range.columns.map(c => c.sentiment));
+    expect(heatmap.columns[2].sentiment).toMatchObject({ label: "Bullish", down: .04, undecided: 0 });
+    expect(heatmap.columns[2].sentiment.up).toBeCloseTo(.96);
+    for (const status of ["stale", "invalid", "expired", "unavailable"] as const) expect(projectionModel(data([past(), { ...results[0], status }]), now).columns[1].sentiment.label).toBeNull();
+    expect(projectionModel(timeline, now, true).columns[1].sentiment.label).toBeNull();
+    expect(projectionModel(data([past(), { ...results[0], forecast: { ...results[0].forecast!, capturedAt: new Date(now + 1).toISOString() } }]), now).columns[1].sentiment.label).toBeNull();
+    expect(range.columns[0].sentiment.label).toBeNull();
   });
 });

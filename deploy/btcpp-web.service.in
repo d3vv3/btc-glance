@@ -1,5 +1,5 @@
 [Unit]
-Description=Bitcoin Weather web
+Description=BTC glance web
 After=network.target
 
 [Service]

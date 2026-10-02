@@ -35,7 +35,7 @@ describe("material change persistence", () => {
       expect(db.prepare("SELECT COUNT(*) AS n FROM outbox").get()).toEqual({ n: 1 });
       expect(db.prepare("SELECT baseline FROM watches").get()).toEqual({ baseline: 0.3 });
       const row = db.prepare("SELECT payload FROM outbox").get() as { payload: string };
-      expect(JSON.parse(row.payload)).toMatchObject({ snapshotId: third.snapshotId, event: { operator: "above", threshold: 2000, previousProbability: 0.2, probability: 0.3 }, url: `/?topicId=123&snapshotId=${third.snapshotId}` });
+      expect(JSON.parse(row.payload)).toMatchObject({ title: "BTC glance", body: `Market quote share for closing above $2000: 20.0% to 30.0%. Target ${third.targetAt}.`, snapshotId: third.snapshotId, event: { operator: "above", threshold: 2000, previousProbability: 0.2, probability: 0.3 }, url: `/?topicId=123&snapshotId=${third.snapshotId}` });
       expect(queueMessage(db, "owner", {}, now, "watch", third.snapshotId)).toBe(false);
     } finally { db.close(); }
   });

@@ -19,6 +19,8 @@ export function openDatabase(filename?: string): DB {
     CREATE TABLE IF NOT EXISTS deliveries (outbox_id INTEGER NOT NULL REFERENCES outbox(id) ON DELETE CASCADE, endpoint TEXT NOT NULL REFERENCES subscriptions(endpoint) ON DELETE CASCADE, attempts INTEGER NOT NULL DEFAULT 0, next_ms INTEGER NOT NULL DEFAULT 0, done INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(outbox_id,endpoint));
     CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, start_ms INTEGER NOT NULL, count INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS worker_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS provider_prices (cadence TEXT NOT NULL, target_ms INTEGER NOT NULL, value REAL NOT NULL, data TEXT NOT NULL, PRIMARY KEY(cadence,target_ms));
+    CREATE TABLE IF NOT EXISTS provider_price_versions (cadence TEXT NOT NULL, target_ms INTEGER NOT NULL, captured_ms INTEGER NOT NULL, raw TEXT NOT NULL, PRIMARY KEY(cadence,target_ms,captured_ms));
   `);
   const columns = db.pragma("table_info(snapshots)") as { name: string }[];
   if (!columns.some(column => column.name === "market_data")) {

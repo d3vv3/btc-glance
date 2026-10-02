@@ -1,19 +1,28 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, establishSession } from "../client/api";
 import type { ForecastResult, Operator, Watch, WatchInput } from "../lib/types";
 import { money, percent } from "./Histogram";
-import { Plus, Save, Bell, Send, Unplug } from "lucide-react";
+import { Plus, Save, Bell, Pencil, Trash2, X } from "lucide-react";
 import { activePushRegistration } from "../lib/push-readiness";
 
-const errorText = (error: unknown) => error instanceof Error ? error.message : "Request failed. Try again when connected.";
+const errorText = (error: unknown) => {
+  if (!(error instanceof Error)) return "Unavailable. Try again.";
+  const message = error.message.trim();
+  if (!message || message.length > 180 || /^[{[]/.test(message) || /stack|SQLITE|INTERNAL_SERVER_ERROR/i.test(message)) return "Unavailable. Try again.";
+  return message;
+};
 
 export function isDisableOnly(editing: Watch | null, input: WatchInput): boolean {
   return !!editing && !input.enabled && (["topicId", "operator", "threshold", "materialPp", "cooldownSeconds"] as const).every(key => input[key] === editing[key]);
 }
 
-export function Watches({ result, threshold, operator, offline, historical = false, onSelect }: { result: ForecastResult | null; threshold: number; operator: Operator; offline: boolean; historical?: boolean; onSelect: (topic: number) => void }) {
+export function WatchSwitch({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: (checked: boolean) => void }) {
+  return <label className="watch-switch"><input type="checkbox" role="switch" aria-label={label} checked={checked} disabled={disabled} onChange={e => onChange(e.target.checked)} /><span aria-hidden="true" /></label>;
+}
+
+export function Watches({ result, threshold, operator, offline, historical = false, onSelect, onOperatorChange, onThresholdChange, selectionControls, targetTimes = {} }: { result: ForecastResult | null; threshold: number; operator: Operator; offline: boolean; historical?: boolean; onSelect: (topic: number, threshold: number, operator: Operator) => void; onOperatorChange: (operator: Operator) => void; onThresholdChange: (threshold: number) => void; selectionControls?: (editing: boolean) => ReactNode; targetTimes?: Record<number, string> }) {
   const [watches, setWatches] = useState<Watch[]>([]);
   const [session, setSession] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -33,12 +42,25 @@ export function Watches({ result, threshold, operator, offline, historical = fal
   const [connecting, setConnecting] = useState(false);
   const pushRevision = useRef(0);
   const actionPending = useRef(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const arrivalHandled = useRef(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const newWatch = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!formOpen) return;
+    form.current?.scrollIntoView({ block: "start" });
+    form.current?.querySelector<HTMLInputElement>('input:not([type="checkbox"]):not(:disabled)')?.focus({ preventScroll: true });
+  }, [formOpen]);
+  useEffect(() => { if (guideOpen && dialog.current && !dialog.current.open) dialog.current.showModal(); else if (!guideOpen) dialog.current?.close(); }, [guideOpen]);
   useEffect(() => { if (offline) { setWatches([]); setEditing(null); setLinkedWatch(null); } }, [offline]);
   useEffect(() => {
     let alive = true;
     let refreshing = false;
     let connected = false;
-    setSupported(window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window);
+    const capable = window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    setSupported(capable);
     const deepWatch = new URLSearchParams(location.search).get("watch");
     const refreshPermission = () => { if (alive && "Notification" in window) { setPermission(Notification.permission); if (Notification.permission !== "granted") setPushState("Notification permission not granted"); } };
     const refresh = async () => {
@@ -64,6 +86,10 @@ export function Watches({ result, threshold, operator, offline, historical = fal
               const granted = "Notification" in window && Notification.permission === "granted";
               setPushEnabled(c.enabled); setSubscribed(!!sub);
               setPushState(!c.enabled ? "Server push is not configured" : !granted ? "Notification permission not granted" : registered ? "Connected to this installation" : sub ? "Browser subscription is not registered; reconnect" : "Not connected");
+              if (!arrivalHandled.current) {
+                arrivalHandled.current = true;
+                if (capable && c.enabled && (!granted || !registered)) setGuideOpen(true);
+              }
             }
           }).catch(() => { if (alive && revision === pushRevision.current) setPushState("Push registration unavailable"); }),
         ]);
@@ -96,13 +122,16 @@ export function Watches({ result, threshold, operator, offline, historical = fal
   const input: WatchInput = { topicId: editing?.topicId ?? topicId ?? 0, operator: editing ? editOperator : operator, threshold: editing ? editThreshold : threshold, materialPp: material, cooldownSeconds: cooldown, enabled };
   const canDisable = isDisableOnly(editing, input);
   const validBoundary = !!result?.forecast?.buckets.some(b => b.lower === input.threshold || b.upper === input.threshold);
+  const closeForm = () => { setFormOpen(false); setEditing(null); setMaterial(5); setCooldown(3600); setEnabled(true); };
+  const probability = validBoundary && editingCurrent ? result?.forecast?.buckets.filter(b => input.operator === "above" ? b.lower >= input.threshold : b.upper <= input.threshold).reduce((sum, b) => sum + b.probability, 0) : undefined;
+  const cooldownChoices = [...new Set([300, 900, 1800, 3600, cooldown])].sort((a, b) => a - b);
   const save = () => run(async () => {
     if (!input.topicId) throw new Error("Select a forecast first.");
     if (editing) await api.watches.update.mutate({ id: editing.id, ...input }); else await api.watches.create.mutate(input);
-    setEditing(null); setMessage("Watch saved. Delivery also requires a connected push subscription.");
+    closeForm(); setMessage("Watch saved.");
   });
   const connectPush = async () => {
-    if (!supported || offline || actionPending.current) return;
+    if (!supported || offline || actionPending.current || permission === "denied") return;
     setConnecting(true);
     await run(async () => {
       const config = await api.push.config.query();
@@ -117,7 +146,7 @@ export function Watches({ result, threshold, operator, offline, historical = fal
       const json = subscription.toJSON();
       if (!json.endpoint || !json.keys?.auth || !json.keys.p256dh) throw new Error("Browser returned an incomplete subscription.");
       await api.push.register.mutate({ endpoint: json.endpoint, keys: { auth: json.keys.auth, p256dh: json.keys.p256dh } });
-      setSubscribed(true); setPushState("Connected to this installation"); setMessage("Notifications connected.");
+      setSubscribed(true); setPushState("Connected to this installation"); setGuideOpen(false); setMessage("Notifications connected.");
     }, async () => {
       // Hold the action lock before requesting permission, still directly in the click gesture.
       setPushState("Waiting for notification permission");
@@ -127,31 +156,33 @@ export function Watches({ result, threshold, operator, offline, historical = fal
       setPermission(granted);
       if (granted !== "granted") {
         setPushState(granted === "denied" ? "Blocked in browser" : "Permission dismissed; reconnect to try again");
-        throw new Error(granted === "denied" ? "Notifications blocked. Allow them in this site's browser settings, then reconnect." : "Permission not granted. Select Connect to try again.");
+        if (granted === "denied") setGuideOpen(true); else setGuideOpen(false);
+        throw new Error(granted === "denied" ? "Notifications blocked." : "Notifications not enabled.");
       }
       setPushState("Connecting notifications");
     });
   };
   return <section className="watch-section" id="watches" aria-labelledby="watch-title">
-    <div className="section-heading"><div><span className="eyebrow">PERSONAL ALERTS</span><h2 id="watch-title">Price watches</h2></div><span className="count">{watches.length} watches</span></div>
-    <div className="watch-columns"><div>
-      <form onSubmit={e => { e.preventDefault(); void save(); }} className="watch-form">
-        <h3>{editing ? "Edit watch" : "New price watch"}</h3>
-        {editing ? <div className="field-row"><label>Direction<select value={editOperator} onChange={e => setEditOperator(e.target.value as Operator)}><option value="above">Above</option><option value="below">Below</option></select></label><label>Boundary<select value={editThreshold} onChange={e => setEditThreshold(Number(e.target.value))}>{boundaries.map(b => <option key={b} value={b}>{money(b)}</option>)}</select></label></div> : <p className="watch-target">{result?.forecast ? <>{operator === "above" ? "Above" : "Below"} <strong>{money(threshold)}</strong><span>Current market's settlement target</span></> : <>No validated boundary<span>A valid outlook is required before saving a watch.</span></>}</p>}
-        <div className="field-row"><label>Change by (points)<input type="number" min="0.1" max="100" step="0.1" required value={material} onChange={e => setMaterial(Number(e.target.value))} /></label><label>Cooldown<select value={cooldown} onChange={e => setCooldown(Number(e.target.value))}>{[60, 900, 3600, 21600, 86400, 604800].map(s => <option key={s} value={s}>{s < 3600 ? `${s / 60} min` : `${s / 3600} hours`}</option>)}</select></label></div>
-        <label className="check"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Watch enabled</label>
-        <div className="actions"><button className="primary" disabled={busy || offline || (!canDisable && (!ready || !editingCurrent || !validBoundary))} type="submit">{editing ? <Save size={16} /> : <Plus size={16} />}{busy ? "Saving..." : editing ? "Save changes" : "Create watch"}</button>{editing && <button type="button" onClick={() => setEditing(null)}>Cancel</button>}</div>
-        {!ready && <p className="small">Alerts paused until a fresh live forecast is available.</p>}
-        <details><summary>Advanced</summary><p className="small">Points are percentage points of quote share. Changes must persist for at least a minute; cooldown limits repeat alerts. Editing resets the baseline. Delivery requires connected notifications and is not guaranteed. Demo, cached, historical, and expired forecasts cannot create watches.</p></details>
-      </form>
-      <div className="push-settings"><h3>Notifications</h3><p role="status">{connecting ? pushState : permission === "denied" ? "Blocked in browser" : !supported ? "Unavailable in this browser" : !pushEnabled ? "Not configured" : permission === "granted" && pushState === "Connected to this installation" ? "Connected" : "Not connected"}</p><div className="actions"><button disabled={busy || offline || !supported || !pushEnabled || permission === "denied"} onClick={() => void connectPush()}><Bell size={16} />{connecting ? "Connecting..." : "Connect"}</button><button disabled={busy || offline || !subscribed || pushState !== "Connected to this installation" || !pushEnabled || permission !== "granted"} onClick={() => void run(async () => { await api.push.test.mutate(); setMessage("Test notification queued, not yet confirmed delivered."); })}><Send size={16} />Send test</button>{subscribed && <button disabled={busy || offline} onClick={() => void run(async () => { const reg = await navigator.serviceWorker.getRegistration(); const sub = await reg?.pushManager.getSubscription(); if (sub) { await api.push.unregister.mutate({ endpoint: sub.endpoint }); await sub.unsubscribe(); } setSubscribed(false); setPushState("Disconnected"); })}><Unplug size={16} />Disconnect</button>}</div>
-        {permission === "denied" && <p className="small">Permission is blocked. Allow notifications in this site's browser settings, then return to the app and reconnect. The app cannot override your choice.</p>}
-        <details><summary>Connection details</summary><p className="small">{pushState} . Permission: {permission}</p><p className="small">iOS 16.4+: add to the Home Screen in Safari, then open the installed app before enabling push. Push requires HTTPS or localhost and a supported browser.</p></details>
+    <div className="section-heading"><h1 id="watch-title">Watches</h1><button className="notification-status" aria-haspopup="dialog" onClick={() => setGuideOpen(true)}><Bell size={16} />{connecting ? "Connecting..." : permission === "granted" && subscribed && pushState === "Connected to this installation" ? "Connected" : "Notifications"}</button></div>
+    <dialog ref={dialog} className="sheet" aria-labelledby="notification-title" onCancel={() => setGuideOpen(false)} onClose={() => setGuideOpen(false)}>
+      <div className="sheet-content"><div className="sheet-heading"><h2 id="notification-title">{permission === "denied" ? "Notifications blocked" : "Enable notifications"}</h2><button className="icon-button" aria-label="Close notification dialog" title="Close" disabled={busy} onClick={() => setGuideOpen(false)}><X size={20} /></button></div>
+        {permission === "denied" ? <p>Allow notifications in this site's browser settings, then select Enable.</p> : !supported ? <p>Use a browser with notifications, or install the app on your Home Screen.</p> : !pushEnabled ? <p>Notifications are unavailable right now.</p> : pushState === "Connected to this installation" && permission === "granted" ? <p>Notifications connected.</p> : <p>Receive alerts for your saved watches.</p>}
+        <div className="actions">{supported && pushEnabled && permission !== "denied" && pushState !== "Connected to this installation" && <button className="primary" disabled={busy || offline} onClick={() => void connectPush()}><Bell size={16} />{connecting ? "Connecting..." : "Enable"}</button>}<button disabled={busy} onClick={() => setGuideOpen(false)}>Later</button></div>
       </div>
-    </div><div className="watch-list">
-      {!watches.length && <div className="empty"><img src="/icons/icon-192.png?v=sun-orb-1" width="48" height="48" alt="" /><h3>{session ? "No watches yet" : "Installation not connected"}</h3><p>Saved watches for this browser will appear here.</p></div>}
-      {watches.map(w => <article className={`watch-item ${linkedWatch === w.id ? "linked-watch" : ""}`} key={w.id} id={`watch-${w.id}`}><div className="section-heading"><a href={`/?market=${w.topicId}&watch=${w.id}&boundary=${w.threshold}&operator=${w.operator}`}>{w.operator === "above" ? "Above" : "Below"} {money(w.threshold)}</a><label className="check"><input type="checkbox" checked={w.enabled} disabled={busy || offline} onChange={() => void run(async () => { await api.watches.update.mutate({ ...w, enabled: !w.enabled }); })} />Enabled</label></div><p>Market #{w.topicId} . {w.materialPp} pp . {w.cooldownSeconds / 60} min cooldown</p><p className="small">Baseline {w.baseline === null ? "pending" : percent(w.baseline)} . Last alert {w.lastNotifiedAt ? new Date(w.lastNotifiedAt).toLocaleString() : "none"}</p><div className="actions"><button disabled={busy || offline} onClick={() => { setEditing(w); setMaterial(w.materialPp); setCooldown(w.cooldownSeconds); setEnabled(w.enabled); setEditThreshold(w.threshold); setEditOperator(w.operator); onSelect(w.topicId); }}>Edit</button><button disabled={busy || offline} onClick={() => { if (window.confirm("Delete this watch?")) void run(async () => { await api.watches.delete.mutate({ id: w.id }); if (editing?.id === w.id) setEditing(null); }); }}>Delete</button></div></article>)}
-    </div></div>
+    </dialog>
+    <div className={`watch-list${formOpen ? "" : " watch-list-fab"}`}>
+      {!watches.length && <div className="empty"><img src="/icons/sun-orb-brand-192.png?v=sun-orb-3" width="48" height="48" alt="" /><h3>{session ? "No watches yet" : "Unavailable"}</h3>{!session && <button disabled={busy || offline} onClick={() => void run(async () => {})}>Retry</button>}</div>}
+      {watches.map(w => <article className={`watch-item ${linkedWatch === w.id ? "linked-watch" : ""}`} key={w.id} id={`watch-${w.id}`}><div className="section-heading"><a href={`/?market=${w.topicId}&watch=${w.id}&boundary=${w.threshold}&operator=${w.operator}`}>{w.operator === "above" ? "Above" : "Below"} {money(w.threshold)}</a><WatchSwitch checked={w.enabled} disabled={busy || offline} label={`Enable watch ${w.operator} ${money(w.threshold)}`} onChange={checked => void run(async () => { await api.watches.update.mutate({ ...w, enabled: checked }); setMessage("Watch saved."); })} /></div>{targetTimes[w.topicId] && <p><time dateTime={targetTimes[w.topicId]}>{new Date(targetTimes[w.topicId]).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time></p>}<div className="watch-item-footer"><p>{w.materialPp} points . {w.cooldownSeconds / 60} min between alerts</p><div className="actions"><button className="icon-button" aria-label="Edit watch" title="Edit watch" disabled={busy || offline} onClick={() => { setEditing(w); setFormOpen(true); setMaterial(w.materialPp); setCooldown(w.cooldownSeconds); setEnabled(w.enabled); setEditThreshold(w.threshold); setEditOperator(w.operator); onSelect(w.topicId, w.threshold, w.operator); }}><Pencil size={18} /></button><button className="icon-button" aria-label="Delete watch" title="Delete watch" disabled={busy || offline} onClick={() => { if (window.confirm("Delete this watch?")) void run(async () => { await api.watches.delete.mutate({ id: w.id }); if (editing?.id === w.id) closeForm(); setMessage("Watch deleted."); }); }}><Trash2 size={18} /></button></div></div></article>)}
+    </div>
+    {!formOpen && <button ref={newWatch} className="primary icon-button watch-fab" aria-label="New watch" title="New watch" disabled={busy || offline} onClick={() => { closeForm(); setMessage(""); setFormOpen(true); }}><Plus size={26} aria-hidden="true" /></button>}
+    {formOpen && <form ref={form} onSubmit={e => { e.preventDefault(); void save(); }} className="watch-form">
+      <h3>{editing ? "Edit watch" : "New watch"}</h3>
+      {selectionControls?.(!!editing)}
+      <div className="field-row"><div className="segmented" role="group" aria-label="Watch direction">{(["above", "below"] as const).map(value => <button key={value} type="button" aria-pressed={input.operator === value} onClick={() => { if (editing) setEditOperator(value); onOperatorChange(value); }}>{value === "above" ? "Above" : "Below"}</button>)}</div><label>Boundary<select aria-label="Watch boundary" disabled={!boundaries.length} value={input.threshold} onChange={e => { const value = Number(e.target.value); if (editing) setEditThreshold(value); onThresholdChange(value); }}>{!validBoundary && <option value={String(input.threshold)} disabled>{Number.isFinite(input.threshold) ? money(input.threshold) : "Choose a boundary"}</option>}{boundaries.map(b => <option key={b} value={b}>{money(b)}</option>)}</select></label></div>
+      {probability !== undefined && <span className="watch-chance">{percent(probability)} {input.operator} {money(input.threshold)}</span>}
+      <div className="field-row"><label>Change by (points)<input type="number" min="0.1" max="100" step="0.1" required value={material} onChange={e => setMaterial(Number(e.target.value))} /></label><label>Minimum time between alerts<select value={cooldown} onChange={e => setCooldown(Number(e.target.value))}>{cooldownChoices.map(s => <option key={s} value={s}>{s / 60} min</option>)}</select></label></div>
+      <div className="actions"><WatchSwitch checked={enabled} disabled={busy || offline} label="Enable watch" onChange={setEnabled} /><button className="primary" disabled={busy || offline || (!canDisable && (!ready || !editingCurrent || !validBoundary))} type="submit">{editing ? <Save size={16} /> : <Plus size={16} />}{busy ? "Saving..." : editing ? "Save changes" : "Create watch"}</button><button type="button" disabled={busy} onClick={() => { closeForm(); requestAnimationFrame(() => newWatch.current?.focus({ preventScroll: true })); }}>Cancel</button></div>
+    </form>}
     {message && <p className="notice" role="status">{message}</p>}
   </section>;
 }

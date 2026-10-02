@@ -12,6 +12,19 @@ describe("audit router regressions", () => {
   beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(now); vi.stubEnv("APP_ORIGIN", "http://localhost:3000"); vi.stubEnv("STALE_SECONDS", "300"); });
   afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
 
+  it("queues a BTC glance test notification without changing its content", async () => {
+    vi.stubEnv("VAPID_PUBLIC_KEY", "test-public-key");
+    vi.stubEnv("VAPID_PRIVATE_KEY", "test-private-key");
+    const db = openDatabase(":memory:");
+    try {
+      db.prepare("INSERT INTO installations VALUES('a',1)").run();
+      db.prepare("INSERT INTO subscriptions VALUES(?,'a',?)").run(endpoint, JSON.stringify({ endpoint, keys: { auth: "test", p256dh: "test" } }));
+      await appRouter.createCaller({ db, request, owner: "a" }).push.test();
+      const row = db.prepare("SELECT payload FROM outbox WHERE owner='a'").get() as { payload: string };
+      expect(JSON.parse(row.payload)).toMatchObject({ title: "BTC glance", body: "Test notification", url: "/", tag: expect.stringMatching(/^test-/) });
+    } finally { db.close(); }
+  });
+
   it.each(["stale", "invalid", "expired", "unavailable"] as const)("allows only unchanged disabling with a %s forecast", async status => {
     const db = openDatabase(":memory:");
     try {

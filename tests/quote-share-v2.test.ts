@@ -26,7 +26,7 @@ describe("prospective quote-share-v2 integration", () => {
       expect(forecast).toMatchObject({ transformationVersion: "quote-share-v2", originalYesSum: 103, normalizationFactor: 100 / 103 });
       expect(forecast.caveat).toContain("YES quote / total YES quotes. Quotes may exceed100");
       expect(latestForecast(db, market.topicId, now)).toMatchObject({ status: "ready", diagnostics: [], forecast, provenance: { raw } });
-      expect(timeline(db, { limit: 8 }, now).targets[0].forecast).toEqual(forecast);
+      expect(timeline(db, { limit: 8, pastCount: 0 }, now).targets[0].forecast).toEqual(forecast);
       expect(thresholdProbability(forecast.buckets, "above", 1000).probability).toBeCloseTo(83 / 103);
       db.prepare("INSERT INTO installations VALUES('owner',?)").run(now);
       const caller = appRouter.createCaller({ db, owner: "owner", request: new Request("http://localhost:3000", { headers: { origin: "http://localhost:3000" } }) });

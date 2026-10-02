@@ -10,7 +10,13 @@ export interface Diagnostic { code: string; message: string }
 export interface SnapshotProvenance { snapshotId: number; capturedAt: string; raw: unknown }
 export interface ForecastResult { market: Market | null; forecast: Forecast | null; status: "ready" | "stale" | "expired" | "invalid" | "unavailable"; diagnostics: Diagnostic[]; provenance?: SnapshotProvenance; freshUntil?: string }
 export interface MarketsResult { markets: Market[]; source: Source; collectedAt: string | null }
-export interface TimelineResult { cadence: Cadence; asOf: string; collectedAt: string | null; source: Source; targets: ForecastResult[] }
+export interface PriceObservation { source: "Kraken"; pair: "XBTUSD"; interval: 60 | 1440; cadence: Cadence; value: number; candleStart: string; candleEnd: string; fetchedAt: string }
+export type TimelineArchive = { snapshotId: number; leadSeconds: number; maxSnapshotAgeSeconds: number; cutoff: string } & (
+  { policy?: "fixed-lead"; capturedAt?: string } |
+  { policy: "latest-valid-pre-target"; capturedAt: string }
+);
+export interface TimelineTarget extends ForecastResult { kind?: "past" | "future"; targetAt?: string; observed?: PriceObservation; archive?: TimelineArchive }
+export interface TimelineResult { cadence: Cadence; asOf: string; collectedAt: string | null; source: Source; targets: TimelineTarget[] }
 export interface ThresholdResult { operator: Operator; threshold: number; probability: number; caveat: string }
 export interface WatchInput { topicId: number; operator: Operator; threshold: number; materialPp: number; cooldownSeconds: number; enabled: boolean }
 export interface Watch extends WatchInput { id: string; createdAt: string; baseline: number | null; lastNotifiedAt: string | null }

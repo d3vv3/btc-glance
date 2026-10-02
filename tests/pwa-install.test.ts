@@ -94,6 +94,13 @@ function promptEvent(outcome: "accepted" | "dismissed") {
 }
 
 describe("progressive install controls", () => {
+  it("uses BTC glance in both install guidance and the native invitation", () => {
+    const ui = controls();
+    expect(ui.all().find(node => node.type === "sheet").props.title).toBe("Install BTC glance");
+    ui.window.dispatchEvent(promptEvent("accepted").event);
+    expect(ui.all().some(node => node.props?.children === "Add BTC glance to your apps")).toBe(true);
+    ui.unmount();
+  });
   it("persists invitation dismissal without discarding native install capability", () => {
     const storage = new Map<string, string>();
     const ui = controls({ storage });

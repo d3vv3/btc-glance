@@ -12,7 +12,7 @@ function setup() {
   const endpoint = "https://fcm.googleapis.com/fcm/send/token";
   db.prepare("INSERT INTO installations VALUES('owner',?)").run(now);
   db.prepare("INSERT INTO subscriptions VALUES(?,'owner',?)").run(endpoint, JSON.stringify({ endpoint, keys: { auth: "auth", p256dh: "key" } }));
-  queueMessage(db, "owner", { title: "Bitcoin Weather" }, now);
+  queueMessage(db, "owner", { title: "BTC glance" }, now);
   return db;
 }
 describe("outbox delivery", () => {

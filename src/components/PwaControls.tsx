@@ -77,7 +77,7 @@ export function PwaControls() {
           const worker = reg.installing;
           worker?.addEventListener("statechange", () => { if (!disposed && worker.state === "installed" && navigator.serviceWorker.controller) setWaiting(worker); });
         });
-      }).catch(() => { if (!disposed) setError("Offline caching could not start. Web app installation may still be available."); });
+      }).catch(() => { if (!disposed) setError("Unavailable. Try again."); });
     }
     return () => { disposed = true; window.removeEventListener("beforeinstallprompt", capture); window.removeEventListener("appinstalled", done); standalone.removeEventListener("change", updateDisplay); minimalUi.removeEventListener("change", updateDisplay); stopMonitoring?.(); };
   }, []);
@@ -110,7 +110,7 @@ export function PwaControls() {
   };
   return <>
     {waiting && <div className="notice update"><span>An app update is ready.</span><button onClick={() => { waiting.postMessage({ type: "SKIP_WAITING" }); }}><RefreshCw size={16} />Update & reload</button></div>}
-    {browser && !installed && <div className="install-control">{install && !dismissed && !waiting && <div className="install-invitation"><span>Add Bitcoin Weather to your apps</span><button className="icon-button" title="Dismiss install invitation" aria-label="Dismiss install invitation" disabled={inFlight} onClick={dismissInvitation}><X size={16} /></button></div>}{install ? <button disabled={inFlight} onClick={requestInstall}><Download size={18} />{inFlight ? "Installing..." : "Install"}</button> : <Sheet title="Install Bitcoin Weather" trigger={<><Download size={18} /><span>Install</span></>}>
+    {browser && !installed && <div className="install-control">{install && !dismissed && !waiting && <div className="install-invitation"><span>Add BTC glance to your apps</span><button className="icon-button" title="Dismiss install invitation" aria-label="Dismiss install invitation" disabled={inFlight} onClick={dismissInvitation}><X size={16} /></button></div>}{install ? <button disabled={inFlight} onClick={requestInstall}><Download size={18} />{inFlight ? "Installing..." : "Install"}</button> : <Sheet title="Install BTC glance" trigger={<><Download size={18} /><span>Install</span></>}>
       <p>{installInstructions(browser)}</p>
     </Sheet>}{error && <p role="status">{error}</p>}{status && <p role="status">{status}</p>}</div>}
   </>;

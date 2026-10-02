@@ -1,0 +1,60 @@
+x-build: &glance-build
+  context: .
+  dockerfile: Dockerfile
+
+x-runtime: &glance-runtime
+  image: btc-glance:local
+  restart: unless-stopped
+  init: true
+  env_file:
+    - .env
+  environment:
+    NODE_ENV: production
+    DATA_DIR: /app/data
+    APP_ORIGIN: https://glance.devve.space
+    DEMO_MODE: "false"
+    VAPID_SUBJECT: https://glance.devve.space
+  volumes:
+    - glance-data:/app/data
+
+services:
+  web:
+    <<: *glance-runtime
+    build: *glance-build
+    networks:
+      - traefik
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/markets').then(async r => { if (!r.ok) throw new Error('HTTP ' + r.status); await r.json(); }).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik
+      traefik.http.routers.glance.rule: Host(`glance.devve.space`)
+      traefik.http.routers.glance.entrypoints: websecure
+      traefik.http.routers.glance.tls: "true"
+      traefik.http.routers.glance.tls.certresolver: le
+      traefik.http.routers.glance.service: glance
+      traefik.http.services.glance.loadbalancer.server.port: "3000"
+  worker:
+    <<: *glance-runtime
+    command: ["npm", "run", "worker"]
+    depends_on:
+      web:
+        condition: service_healthy
+    labels:
+      traefik.enable: "false"
+
+networks:
+  traefik:
+    external: true
+
+volumes:
+  glance-data:
+    name: glance_data
