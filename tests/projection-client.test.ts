@@ -235,7 +235,18 @@ describe("projection client regressions", () => {
     expect(styles).toMatch(/\.forecast-columns \{[^}]*height: calc\(var\(--forecast-header-height\) \+ var\(--forecast-plot-height\)\)/);
     expect(styles).toMatch(/\.forecast-range-plot \{[^}]*top: var\(--forecast-header-height\)[^}]*height: var\(--forecast-plot-height\)/);
     expect(styles).toMatch(/\.forecast-column \{[^}]*background: transparent/);
-    expect(styles).toMatch(/\.forecast-column\[aria-pressed=true\] \{ box-shadow:[^}]*\}/);
+    expect(styles).toMatch(/\.forecast-column \{[^}]*position: relative[^}]*height: calc\(var\(--forecast-header-height\) \+ var\(--forecast-plot-height\)\)/);
+    expect(styles).toContain('.forecast-column[aria-pressed=true] { border-color: transparent; }');
+    expect(styles).toContain('.forecast-column[aria-pressed=true]::after { content: ""; position: absolute; inset: 0; border: 2px solid $brand; border-radius: inherit; pointer-events: none; }');
+    expect((styles.match(/\.forecast-column\[aria-pressed=true\]::after \{[^}]*content:/g) ?? [])).toHaveLength(1);
+    expect(styles).not.toMatch(/\.forecast-column\[aria-pressed=true\]::before/);
+    expect(styles).toContain('.forecast-column[aria-pressed=true]:hover { box-shadow: none; }');
+    expect(styles).toContain('.forecast-column:focus-visible { outline: none; box-shadow: inset 0 0 0 2px $ink; }');
+    for (const view of ["range", "heatmap"]) {
+      const html = render([target(1), target(2)], 3, view, "daily", 2);
+      expect((html.match(/<button\b[^>]*class="forecast-column [^>]*aria-pressed="true"[^>]*aria-label="[^"]+"/g) ?? [])).toHaveLength(1);
+      expect(html).not.toContain("heatmap-selection");
+    }
     expect(styles).toContain(".forecast-strip[data-more=true] .projection-scroll { mask-image:");
     expect(styles).toMatch(/\.projection-scroll \{[^}]*overflow-x: auto[^}]*scrollbar-width: none/);
     expect(styles).toContain(".projection-scroll:focus-visible");
@@ -452,11 +463,19 @@ describe("projection client regressions", () => {
   it("restricts only heatmap header hit areas and makes cells active without guide interception", () => {
     const styles = readFileSync(new URL("../src/app/globals.scss", import.meta.url), "utf8");
     expect(styles).toContain(".forecast-strip[data-view=heatmap] .forecast-range-plot { pointer-events: auto; }");
-    expect(styles).toContain(".forecast-strip[data-view=heatmap] .forecast-column { height: var(--forecast-header-height); }");
-    expect(styles).toContain(".projection-guide, .heatmap-selection, .heatmap-share { pointer-events: none; }");
+    expect(styles).toContain(".forecast-strip[data-view=heatmap] .forecast-column { pointer-events: none; }");
+    expect(styles).not.toMatch(/\.forecast-strip\[data-view=heatmap\] \.forecast-column \{[^}]*height:/);
+    expect(styles).toContain(".forecast-strip[data-view=heatmap] .forecast-column-header { pointer-events: auto; }");
+    expect(styles).toMatch(/\.forecast-column-header \{[^}]*height: var\(--forecast-header-height\)/);
+    expect(styles).toContain(".forecast-strip[data-view=heatmap] .forecast-column[aria-pressed=true]::after { border-color: var(--ink); }");
+    expect(styles).toContain(".projection-guide, .heatmap-share { pointer-events: none; }");
+    expect(styles).not.toContain("heatmap-selection");
+    expect(styles).toContain(".forecast-strip[data-view=heatmap] [data-testid=heatmap-cell]:focus-visible { outline: none; stroke: #fff; stroke-width: 2px; }");
+    expect(styles).toContain(".forecast-strip[data-view=heatmap] [data-testid=heatmap-cell]:focus-visible { stroke: var(--ink); }");
     expect(styles).toContain(".forecast-strip[data-view=heatmap] .projection-scroll { mask-image: none; }");
     expect(styles).toContain("font-size: 12px; font-weight: 600;");
     const source = readFileSync(new URL("../src/components/Projection.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("heatmap-selection");
     expect(source).toContain("nextHeatmapCell(columns, model.rows");
     expect(source).toContain('e.key === "Enter" || e.key === " "');
     expect(source).toContain("onClick={() => inspectCell(i, r)}");
