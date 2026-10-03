@@ -6,6 +6,45 @@
     <b>A Bitcoin weather forecast, powered by prediction markets.</b>
 </p>
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <a href="screenshots/daily-outlook.png"><img src="screenshots/daily-outlook.png" alt="Daily Bitcoin price outlook" width="240"/></a>
+      <br/>
+      <b>Daily outlook</b>
+    </td>
+    <td align="center" width="33%">
+      <a href="screenshots/hourly-heatmap.png"><img src="screenshots/hourly-heatmap.png" alt="Hourly Bitcoin price heatmap" width="240"/></a>
+      <br/>
+      <b>Hourly heatmap</b>
+    </td>
+    <td align="center" width="33%">
+      <a href="screenshots/distribution-above.png"><img src="screenshots/distribution-above.png" alt="Bitcoin market quote distribution above a price threshold" width="240"/></a>
+      <br/>
+      <b>Above-price distribution</b>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <a href="screenshots/distribution-below.png"><img src="screenshots/distribution-below.png" alt="Bitcoin market quote distribution below a price threshold" width="240"/></a>
+      <br/>
+      <b>Below-price distribution</b>
+    </td>
+    <td align="center" width="33%">
+      <a href="screenshots/watches.png"><img src="screenshots/watches.png" alt="Saved Bitcoin market quote-weight watches" width="240"/></a>
+      <br/>
+      <b>Saved watches</b>
+    </td>
+    <td align="center" width="33%">
+      <a href="screenshots/new-watch-dark.png"><img src="screenshots/new-watch-dark.png" alt="Create a Bitcoin market quote-weight watch in dark mode" width="240"/></a>
+      <br/>
+      <b>Create a watch</b>
+    </td>
+  </tr>
+</table>
+
 BTC glance turns Glimpse prediction-market quotes into a visual outlook for
 Bitcoin. Explore hourly and daily price ranges, see bullish, bearish, or mixed
 conditions, and compare recorded forecasts with actual Kraken prices. Save
